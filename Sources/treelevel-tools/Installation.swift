@@ -378,7 +378,9 @@ enum Installation {
 }
 
 extension Process {
-    /// Runs a program and returns its output, or nil when it cannot be run.
+    /// Runs a program and returns its output, or nil when it cannot be run or does not finish within
+    /// `timeout`. A module broken by a move can spin instead of answering `--version`; without the limit the
+    /// probe waited for ever and left the program running at full speed, one more at each probe.
     static func output(_ url: URL, _ arguments: [String], timeout: TimeInterval = 20,
                        environment: [String: String]? = nil) -> String? {
         let process = Process()
@@ -388,9 +390,19 @@ extension Process {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
+        let done = DispatchSemaphore(value: 0)
+        process.terminationHandler = { _ in done.signal() }
         do { try process.run() } catch { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
+        // Lire pendant qu'il tourne : un programme bavard remplirait le tuyau et attendrait qu'on le vide.
+        var data = Data()
+        let reader = DispatchQueue(label: "output-reader")
+        reader.async { data = pipe.fileHandleForReading.readDataToEndOfFile() }
+        if done.wait(timeout: .now() + timeout) == .timedOut {
+            process.terminate()
+            if done.wait(timeout: .now() + 2) == .timedOut { kill(process.processIdentifier, SIGKILL) }
+            return nil
+        }
+        reader.sync {}
         return String(decoding: data, as: UTF8.self)
     }
 }
