@@ -323,8 +323,11 @@ public static class Installation
         }
         // The image first: on Windows it is the supported way to reach Herwig and Sherpa, and it answers for
         // itself. Nothing is downloaded here — an image that is not on the machine simply offers nothing.
-        if (!Native && Docker is string docker && ImageIsPresent(docker, Image())
-            && ImageCapabilities(docker, Image()) is MCCapabilities image)
+        // Found as a job will find it: the pinned tag, then « latest ». This asked for the pinned tag alone, so an
+        // image pulled without a tag — which gives « latest », what anyone types first — was on the machine,
+        // answered when run by hand, and still offered nothing, while the job runner would have used it.
+        if (Container() is (string docker, string found)
+            && ImageCapabilities(docker, found) is MCCapabilities image)
         {
             foreach (var generator in image.Generators)
             {
