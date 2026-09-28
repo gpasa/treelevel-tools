@@ -283,9 +283,21 @@ public struct MCCapabilities: Codable, Equatable {
     public var generators: [MCJob.Generator]
     /// Version of each generator, by its raw value ("pythia8": "8.310").
     public var versions: [String: String] = [:]
+    /// Les familles de voies que chaque générateur sait ouvrir en production inclusive — la source
+    /// « Machine » de l'espace Génération —, par nom brut du générateur. C'est au moteur de le dire : il est
+    /// seul à savoir ce que ses générateurs implémentent, et l'app n'affiche que ce qu'on lui annonce.
+    /// Absent chez un moteur antérieur à la 1.3 : voir `machineChannels(of:)`.
+    public var colliderChannels: [String: [MCProcess.Channel]]? = nil
     public init(engineVersion: String, generators: [MCJob.Generator]) {
         self.engineVersion = engineVersion
         self.generators = generators
+    }
+
+    /// Ce qu'un générateur sait ouvrir en production inclusive. Un moteur qui ne l'annonce pas encore est
+    /// antérieur à la 1.3 : on retient alors ce que la 1.2 savait faire, Pythia 8 et ses six familles.
+    public func machineChannels(of generator: MCJob.Generator) -> [MCProcess.Channel] {
+        if let table = colliderChannels { return table[generator.rawValue] ?? [] }
+        return generator == .pythia8 && generators.contains(.pythia8) ? MCProcess.Channel.allCases : []
     }
 }
 

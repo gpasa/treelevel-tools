@@ -310,6 +310,9 @@ enum Installation {
         }
         var caps = MCCapabilities(engineVersion: engineVersion, generators: generators)
         caps.versions = versions
+        // Ce que chacun sait faire en production inclusive. Le Pythia natif mène une machine avec les six
+        // familles ; les autres modules natifs n'en mènent aucune — ils la gagneront par l'image.
+        caps.colliderChannels = generators.contains(.pythia8) ? ["pythia8": MCProcess.Channel.allCases] : [:]
         return caps
     }
 
@@ -325,6 +328,10 @@ enum Installation {
         for generator in fromImage.generators where !caps.generators.contains(generator) {
             caps.generators.append(generator)
             caps.versions[generator.rawValue] = (fromImage.versions[generator.rawValue] ?? generator.label) + " (conteneur)"
+            // L'image dit elle-même ce qu'elle sait ouvrir ; une image antérieure à la 1.3 ne le dit pas, et
+            // `machineChannels(of:)` retient alors ce que la 1.2 savait faire.
+            let familles = fromImage.machineChannels(of: generator)
+            if !familles.isEmpty { caps.colliderChannels?[generator.rawValue] = familles }
         }
         return caps
     }
