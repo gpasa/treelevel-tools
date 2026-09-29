@@ -9,7 +9,7 @@ import Foundation
 // The generators are separate programs: the Pythia driver built by Backends/pythia (treelevel-pythia) and
 // Herwig's own command line. Nothing here links against them.
 
-let engineVersion = "0.3.0"
+let engineVersion = "0.4.0"
 
 func fail(_ message: String) -> Never {
     FileHandle.standardError.write(("treelevel-tools: " + message + "\n").data(using: .utf8)!)
@@ -29,7 +29,7 @@ guard let command = args.first else {
 
 switch command {
 case "version":
-    print("TreeLevel MC Engine \(engineVersion)")
+    print("TreeLevel Tools \(engineVersion)")
 case "capabilities":
     let caps = Installation.capabilities(engineVersion: engineVersion)
     let data = try! MCJobFolder.encoder.encode(caps)

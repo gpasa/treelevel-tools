@@ -66,7 +66,7 @@ struct Runner {
         status.finished = Date()
         status.eventsWritten = events.events.count
         status.crossSection = events.crossSection
-        status.generatorVersion = "TreeLevel MC Engine \(engineVersion) (sans gerbe)"
+        status.generatorVersion = "TreeLevel Tools \(engineVersion) (sans gerbe)"
         status.progress = 1
         status.seconds = Date().timeIntervalSince(start)
         publish(status)
