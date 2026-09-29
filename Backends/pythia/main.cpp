@@ -100,7 +100,8 @@ public:
     out << "A 0 GenCrossSection " << number_(crossSectionPb) << " " << number_(error) << " -1 -1\n";
   }
 
-  void write(const Pythia8::Event& event, double weight, int number, double crossSectionPb, double errorPb) {
+  void write(const Pythia8::Event& event, double weight, int number, double crossSectionPb, double errorPb,
+             int processCode = 0, const std::string& processName = "") {
     // HepMC ids are 1-based and skip Pythia's entry 0 (the whole system).
     // Chaque ensemble de mères a son vertex. On l'écrit quand il en réunit plusieurs, ou quand il n'est pas
     // là où la mère est née : c'est le vol d'un K0S, d'un Λ, d'un hadron b, d'un τ — et la zone lumineuse
@@ -148,6 +149,11 @@ public:
     out << "E " << number << " " << vertices.size() << " " << n << "\n";
     out << "U GEV MM\n";
     out << "W " << number_(weight) << "\n";
+    // Le processus dur qui a fait l'événement — ce qu'un filtre cherchera parmi tout ce qu'une machine produit.
+    if (processCode > 0) {
+      out << "A 0 signal_process_id " << processCode << "\n";
+      if (!processName.empty()) out << "A 0 signal_process_name " << processName << "\n";
+    }
     {
       // Every event carries the cross section as it stands after it, which is what HepMC3 asks for and what
       // a reader that keeps the last one needs. Writing it once, on the first event, was enough as long as
@@ -220,7 +226,8 @@ int main(int argc, char* argv[]) {
 #else
     // HepMC3 cross sections are in pb; Pythia reports mb.
     writer.write(pythia.event, pythia.info.weight(), written,
-                 pythia.info.sigmaGen() * 1e9, pythia.info.sigmaErr() * 1e9);
+                 pythia.info.sigmaGen() * 1e9, pythia.info.sigmaErr() * 1e9,
+                 pythia.info.code(), pythia.info.name());
 #endif
     ++written;
     if (written % 100 == 0 || written == requested)
