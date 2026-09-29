@@ -46,7 +46,7 @@ ifdef WITH_HEPMC3
   FLAGS += -DTREELEVEL_WITH_HEPMC3 $(HEPMC)
 endif
 
-treelevel-pythia: main.cpp
+treelevel-pythia: main.cpp JobCard.h
 	$(CXX) $(CXXFLAGS) $< -o $@ $(FLAGS)
 
 install: treelevel-pythia
