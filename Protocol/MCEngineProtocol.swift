@@ -24,7 +24,7 @@ public enum MCEngineProtocol {
     /// pendant que Windows retombait sur une autre — la même image aujourd'hui, aucune garantie demain. Les deux
     /// moteurs sont publiés ensemble et portent aussi ce numéro dans leur fichier de projet ; quand il bouge, il
     /// bouge partout.
-    public static let toolsVersion = "0.3.0"
+    public static let toolsVersion = "0.4.0"
 
     public static let jobFileName = "job.json"
     public static let inputFileName = "events.lhe"

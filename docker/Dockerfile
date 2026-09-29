@@ -97,10 +97,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends rsync \
     && echo "https://gitlab.com/Pythia8/releases/-/archive/pythia${PYTHIA_VERSION}/releases-pythia${PYTHIA_VERSION}.tar.gz" \
        >> "$PREFIX/share/treelevel-tools/SOURCES.txt"
 
-COPY Backends/pythia/main.cpp /tmp/treelevel-pythia.cpp
-RUN g++ -O2 -std=c++17 /tmp/treelevel-pythia.cpp -o "$PREFIX/bin/treelevel-pythia" \
+# The driver reads the job and writes its own card (JobCard.h) — the same code on the Mac, on Windows and here.
+COPY Backends/pythia/main.cpp Backends/pythia/JobCard.h /tmp/treelevel-pythia/
+RUN g++ -O2 -std=c++17 -I/tmp/treelevel-pythia /tmp/treelevel-pythia/main.cpp -o "$PREFIX/bin/treelevel-pythia" \
       -I"$PREFIX/include" -L"$PREFIX/lib" -lpythia8 -Wl,-rpath,"$PREFIX/lib" \
-    && rm -f /tmp/treelevel-pythia.cpp
+    && rm -rf /tmp/treelevel-pythia
 
 # WHIZARD, which computes its own matrix elements with O'Mega — hence OCaml. Three flags earn their place:
 #
@@ -167,13 +168,12 @@ RUN rm -rf "$PREFIX/src" \
     && chmod -R a+rX "$PREFIX"
 
 # --- the engine --------------------------------------------------------------------------------------------
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS engine
-ARG TARGETARCH
-WORKDIR /src
-COPY win/treelevel-tools/ ./
-RUN RID=$([ "$TARGETARCH" = "arm64" ] && echo linux-arm64 || echo linux-x64) \
-    && dotnet publish -c Release -r "$RID" --self-contained true \
-         -p:PublishSingleFile=true -o /out
+# C++, written once for Linux (Backends/engine/engine.cpp): it reads the job, writes the cards of Herwig,
+# Sherpa, WHIZARD and CalcHEP, hands Pythia to its driver, and follows them into status.json. It replaced the C#
+# engine of Windows, which the image used to compile — each host now only finds Docker and mounts the folder.
+FROM hep AS engine
+COPY Backends/pythia/JobCard.h Backends/engine/engine.cpp /src/
+RUN mkdir -p /out && g++ -O2 -std=c++17 -I/src /src/engine.cpp -o /out/treelevel-tools
 
 # --- what ships --------------------------------------------------------------------------------------------
 FROM debian:bookworm-slim

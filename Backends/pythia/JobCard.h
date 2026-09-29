@@ -322,10 +322,45 @@ inline bool tuneLines(const std::string& raw, std::vector<std::string>& L, std::
   return false;
 }
 
+/// Why this machine cannot work, in one sentence, or "" when nothing is obviously wrong. Pythia refuses these
+/// cases by printing an empty process table without a word of explanation; naming them first spares the reader.
+inline std::string objection(const Process& p) {
+  if (!p.collider || p.beams.size() != 2) return "";
+  const bool h0 = isHadron(p.beams[0]), h1 = isHadron(p.beams[1]);
+  if (p.has("soft") && p.has("qcd"))
+    return "soft QCD already contains hard parton scattering — its multiple interactions make it — so asking for "
+           "both counts the same events twice. Choose one: soft for everything the machine makes, hard QCD for the "
+           "scattering above a transverse-momentum floor";
+  if (p.has("photoproduction") && p.channels.size() > 1 && !p.mix)
+    return "photoproduction replaces the beam rather than adding to it: switching the photon flux on leaves no "
+           "lepton to annihilate or to exchange a boson, and Pythia draws one machine at a time. Ask for the two "
+           "configurations to be drawn and assembled, or keep photoproduction on its own";
+  const bool annihilate = (h0 && h1) || p.beams[0] == -p.beams[1];
+  bool open = false, onlyQCD = true, onlyPhoto = true;
+  for (const auto& c : p.channels) {
+    bool ok;
+    if (c == "singleBoson" || c == "bosonPair" || c == "annihilation") ok = annihilate;
+    else if (c == "qcd" || c == "soft") ok = h0 && h1;
+    else if (c == "photoproduction") ok = !h0 || !h1;
+    else if (c == "chargedCurrent") ok = h0 || h1 || p.beams[0] == -p.beams[1];
+    else ok = true;                                  // bosonExchange, neutralCurrent, inclusive
+    open = open || ok;
+    onlyQCD = onlyQCD && (c == "qcd" || c == "soft");
+    onlyPhoto = onlyPhoto && c == "photoproduction";
+  }
+  if (open || p.channels.empty()) return "";
+  const std::string b = std::to_string(p.beams[0]) + " and " + std::to_string(p.beams[1]);
+  if (onlyQCD) return "beams " + b + " carry no partons, so QCD has nothing to scatter — those families want two hadrons";
+  if (onlyPhoto) return "neither beam " + b + " radiates the photon flux photoproduction needs — that family wants at least one lepton";
+  return "beams " + b + " cannot annihilate, so the channels asked for (ff̄ → γ*/Z, ff̄ → VV) have nothing to work "
+         "with — these two scatter rather than annihilate, which is the boson-exchange family";
+}
+
 /// The whole card of a job. `part` is "" for everything, "beams" or "photons" for one half of an assembled
 /// machine; `seedOffset` gives the second half its own randomness.
 inline bool card(const Value& job, const std::string& part, int seedOffset, std::string& out, std::string& error) {
   Process p = expanded(readProcess(job["hardProcess"]));
+  if (part.empty()) { error = objection(p); if (!error.empty()) return false; }
   if (part == "beams" || part == "photons") {
     std::vector<std::string> kept;
     for (const auto& c : p.channels) if ((c == "photoproduction") == (part == "photons")) kept.push_back(c);

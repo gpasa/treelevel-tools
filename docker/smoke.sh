@@ -82,6 +82,9 @@ essai herwig7     test-job        3.1139 3.1140
 essai sherpa3     test-job-sherpa 2.5    3.6
 essai whizard3    test-job-sherpa 2.5    3.6
 essai calchep3    test-job-sherpa 2.5    3.6
+# Une machine, que seul Pythia mène : « tout ce que le détecteur voit » entre e⁻ et e⁺ à 200 GeV, deux tirages
+# réunis (les faisceaux, puis leur flux de photons). 1 125 pb au Mac comme dans l'image.
+essai pythia8     test-job-machine 900   1400
 
 if [ "$echecs" -gt 0 ]; then printf '\n%d échec(s)\n' "$echecs"; exit 1; fi
-printf '\nles six générateurs répondent\n'
+printf '\nles six générateurs répondent, et la machine\n'
