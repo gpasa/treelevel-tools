@@ -324,6 +324,18 @@ struct Runner {
         // Sauf si l'on vient justement voir le mou : un seuil retrancherait ce qu'on était venu regarder.
         if p.channels.contains(.soft) { plancher = nil }
         if let pt = plancher, pt > 0 { lines.append("PhaseSpace:pTHatMin = \(pt)") }
+        // La zone lumineuse : les collisions n'ont pas lieu en un point mais dans le volume où les deux
+        // paquets se croisent, gaussien, étroit en travers et long le long du faisceau. Tailles typiques (mm) :
+        // un anneau à leptons comme LEP (plat : 150 µm × 5 µm, 1 cm en z), un collisionneur de hadrons comme le
+        // LHC (16 µm, 4 cm en z), un anneau ep comme HERA (80 µm × 20 µm, 10 cm en z). Sur cible fixe, la
+        // cible fixe le point.
+        if !p.fixedTarget {
+            let lepton = { (id: Int) in (11...16).contains(abs(id)) }
+            let (sx, sy, sz): (Double, Double, Double) = p.beams.allSatisfy(lepton) ? (0.15, 0.005, 10)
+                : p.beams.contains(where: lepton) ? (0.08, 0.02, 100) : (0.016, 0.016, 40)
+            lines += ["Beams:allowVertexSpread = on", "Beams:sigmaVertexX = \(sx)", "Beams:sigmaVertexY = \(sy)",
+                      "Beams:sigmaVertexZ = \(sz)", "Beams:maxDevVertex = 4"]
+        }
         return lines.joined(separator: "\n")
     }
 

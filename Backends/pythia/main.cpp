@@ -18,6 +18,7 @@
 #include <iostream>
 #include <string>
 #include <sys/stat.h>
+#include <map>
 #include <vector>
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
@@ -101,21 +102,42 @@ public:
 
   void write(const Pythia8::Event& event, double weight, int number, double crossSectionPb, double errorPb) {
     // HepMC ids are 1-based and skip Pythia's entry 0 (the whole system).
+    // Chaque ensemble de mères a son vertex. On l'écrit quand il en réunit plusieurs, ou quand il n'est pas
+    // là où la mère est née : c'est le vol d'un K0S, d'un Λ, d'un hadron b, d'un τ — et la zone lumineuse
+    // quand les faisceaux ont une taille. Sinon le raccourci « particule mère » suffit, et le lecteur place
+    // la fille où la mère est née.
     const int n = event.size() - 1;
     std::vector<std::string> vertices;
+    std::map<std::pair<int, int>, int> vertexOf;
     std::string particles;
+    auto position = [](const Pythia8::Vec4& v) {
+      if (v.px() == 0 && v.py() == 0 && v.pz() == 0 && v.e() == 0) return std::string();
+      // Pythia : vProd() en mm, temps en mm/c ; HepMC : @ x y z t, dans la même unité (U GEV MM).
+      return " @ " + number_(v.px()) + " " + number_(v.py()) + " " + number_(v.pz()) + " " + number_(v.e());
+    };
     for (int i = 1; i < event.size(); ++i) {
       const Pythia8::Particle& p = event[i];
       int status = p.isFinal() ? 1 : (i <= 2 ? 4 : 2);
       int parent = 0;
-      if (p.mother1() > 0 && p.mother2() > p.mother1()) {
-        // Several mothers: a vertex holding them all.
-        std::string list;
-        for (int m = p.mother1(); m <= p.mother2(); ++m) list += (list.empty() ? "" : ",") + std::to_string(m);
-        vertices.push_back("V " + std::to_string(-(int)vertices.size() - 1) + " 0 [" + list + "]\n");
-        parent = -(int)vertices.size();
-      } else if (p.mother1() > 0) {
-        parent = p.mother1();
+      const int m1 = p.mother1(), m2 = std::max(p.mother1(), p.mother2());
+      if (m1 > 0) {
+        const auto key = std::make_pair(m1, m2);
+        const Pythia8::Vec4 here = p.vProd(), born = event[m1].vProd();
+        const bool moved = (here - born).pAbs() > 1e-9 || std::abs(here.e() - born.e()) > 1e-9;
+        if (auto found = vertexOf.find(key); found != vertexOf.end()) {
+          parent = found->second;
+        } else if (m2 > m1 || moved) {
+          std::string list;
+          for (int m = m1; m <= m2; ++m) list += (list.empty() ? "" : ",") + std::to_string(m);
+          // Écrit juste avant sa première fille : ses mères, d'indice plus petit, sont déjà écrites — ce que
+          // demande la bibliothèque HepMC3.
+          vertices.push_back("V " + std::to_string(-(int)vertices.size() - 1) + " 0 [" + list + "]" + position(here) + "\n");
+          particles += vertices.back();
+          parent = -(int)vertices.size();
+          vertexOf[key] = parent;
+        } else {
+          parent = m1;
+        }
       }
       particles += "P " + std::to_string(i) + " " + std::to_string(parent) + " " + std::to_string(p.id()) + " ";
       particles += number_(p.px()) + " " + number_(p.py()) + " " + number_(p.pz()) + " " + number_(p.e()) + " "
@@ -134,7 +156,6 @@ public:
       const double error = (errorPb > 0 && errorPb < crossSectionPb) ? errorPb : 0.0;
       out << "A 0 GenCrossSection " << number_(crossSectionPb) << " " << number_(error) << " -1 -1\n";
     }
-    for (const std::string& v : vertices) out << v;
     out << particles;
   }
 
