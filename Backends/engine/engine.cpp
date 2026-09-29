@@ -6,11 +6,18 @@
 // the logic of the generators now lives here once, and each host only finds Docker, mounts the folder and
 // relays the status.
 //
-//   treelevel-tools run <job folder>             read job.json, produce events.hepmc, keep status.json current
+//   treelevel-tools run <job folder> [--launch launch.json] [--number n]
+//                                                read job.json, produce events.hepmc, keep status.json current
 //   treelevel-tools capabilities [--out file]    what this image can run, as JSON
 //   treelevel-tools version
 //
-// Build:  g++ -O2 -std=c++17 -I Backends/pythia Backends/engine/engine.cpp -o treelevel-tools
+// Inside the image the generators are found where the image puts them. A host that runs them natively — the Mac,
+// whose modules are built for it — says how to launch each one in launch.json: the program, its extra
+// arguments, its environment, its version, and two habits of the platform (CalcHEP in a folder without spaces,
+// WHIZARD writing Les Houches). The cards stay here, written once; only the launching belongs to the host.
+//
+// Build:  g++ -O2 -std=c++17 -I Backends/pythia Backends/engine/engine.cpp -o treelevel-tools   (image)
+//         clang++ … -o treelevel-engine, beside the Swift host in TreeLevel Tools.app (Mac)
 //
 // Copyright (C) 2026 Guglielmo Pasa. GNU General Public License v3 or later.
 
@@ -53,6 +60,7 @@ using jobcard::Value;
 // ---------------------------------------------------------------------------------------------------------
 // Small tools
 
+bool exists(const std::string& path) { struct stat s; return stat(path.c_str(), &s) == 0; }
 bool isFile(const std::string& path) { struct stat s; return stat(path.c_str(), &s) == 0 && S_ISREG(s.st_mode); }
 bool isDir(const std::string& path) { struct stat s; return stat(path.c_str(), &s) == 0 && S_ISDIR(s.st_mode); }
 
@@ -447,7 +455,8 @@ std::string capabilitiesJSON(const Capabilities& c) {
 
 class Runner {
 public:
-  Runner(std::string folder, Value job) : folder_(std::move(folder)), job_(std::move(job)) {
+  Runner(std::string folder, Value job, Value launch, int number)
+      : folder_(std::move(folder)), job_(std::move(job)), launch_(std::move(launch)), number_(number) {
     id_ = job_["id"].str();
     generator_ = job_["generator"].str("passthrough");
     input_ = job_["input"].str("events.lhe");
@@ -481,13 +490,36 @@ public:
 
 private:
   std::string folder_, id_, generator_, input_, output_;
-  Value job_;
+  Value job_, launch_;
+  int number_ = 1;
   jobcard::Process process_;
   int events_ = 0;
   long long seed_ = 0;
   double start_ = appleNow();
 
-  Status base() const { Status s; s.jobID = id_; s.number = 1; s.started = start_; return s; }
+  Status base() const { Status s; s.jobID = id_; s.number = number_; s.started = start_; return s; }
+
+  // How the host launches a generator (launch.json), or nothing inside the image.
+  bool hosted(const std::string& g) const { return !launch_[g].isNull(); }
+  std::string program(const std::string& g) const { return launch_[g]["program"].str(); }
+  std::vector<std::string> arguments(const std::string& g) const {
+    std::vector<std::string> out;
+    for (const auto& a : launch_[g]["arguments"].items) out.push_back(a.str());
+    return out;
+  }
+  std::map<std::string, std::string> environment(const std::string& g) const {
+    std::map<std::string, std::string> out;
+    for (const auto& kv : launch_[g]["environment"].members) out[kv.first] = kv.second.str();
+    return out;
+  }
+
+  /// What a generator wrote, counted, and the job finished with it.
+  bool finishFromOutput(const std::string& name, std::optional<std::pair<double, double>> sigma = std::nullopt) {
+    Summary sum = summary(join(folder_, output_));
+    if (sum.events <= 0) return failed(name + " wrote no event — see engine.log");
+    if (sigma) { sum.sigma = sigma->first; sum.error = sigma->second; }
+    return finished(sum.events, sum.sigma, sum.error, name);
+  }
   void publish(const Status& s) { writeFile(join(folder_, "status.json"), s.json()); }
   void log(const std::string& line) {
     std::ofstream out(join(folder_, "engine.log"), std::ios::app | std::ios::binary);
@@ -551,6 +583,8 @@ private:
   }
 
   std::string version(const std::string& key, const std::string& fallback) {
+    const std::string told = launch_[key]["version"].str();
+    if (!told.empty()) return told;
     auto c = capabilities();
     auto it = c.versions.find(key);
     return it == c.versions.end() ? fallback : it->second;
@@ -595,15 +629,15 @@ private:
   }
 
   bool pythia() {
-    const std::string driver = pythiaDriver();
+    const std::string driver = hosted("pythia8") ? program("pythia8") : pythiaDriver();
     if (driver.empty()) return failed("the Pythia 8 driver is missing from this image");
     const std::string no = dressingObjection();
     if (!no.empty()) return failed(no);
     jobcard::Process p = jobcard::expanded(process_);
     const std::string objection = jobcard::objection(p);
     if (!objection.empty()) return failed(objection);
-    std::map<std::string, std::string> env;
-    if (!pythiaData().empty()) env["PYTHIA8DATA"] = pythiaData();
+    std::map<std::string, std::string> env = environment("pythia8");
+    if (!env.count("PYTHIA8DATA") && !pythiaData().empty()) env["PYTHIA8DATA"] = pythiaData();
     const std::string name = version("pythia8", "Pythia 8");
     if (p.collider && p.mix && p.has("photoproduction") && p.channels.size() > 1) return pythiaMixed(driver, env, name);
     return runGenerator({driver, "--job", "job.json", "--out", output_}, name, "", true, env);
@@ -720,6 +754,13 @@ private:
     in << "saverun job EventGenerator\n";
     writeFile(join(folder_, "job.in"), in.str());
     const std::string name = version("herwig7", "Herwig 7");
+    if (hosted("herwig7")) {
+      // Le module du Mac : son dépôt reconstruit à sa place et ses chemins de recherche, donnés par l'hôte.
+      std::vector<std::string> read = {program("herwig7"), "read", "job.in"}, runArgs = {program("herwig7"), "run", "job.run", "-N", std::to_string(events_)};
+      for (const auto& a : arguments("herwig7")) { read.push_back(a); runArgs.push_back(a); }
+      if (!runGenerator(read, name, "lecture de la configuration", false, environment("herwig7"))) return false;
+      return runGenerator(runArgs, name, "", true, environment("herwig7"));
+    }
     const std::string here = quote(folder_);
     if (!runGenerator({"/bin/bash", "-lc", "cd " + here + " && Herwig read job.in"}, name, "lecture de la configuration", false)) return false;
     return runGenerator({"/bin/bash", "-lc", "cd " + here + " && Herwig run job.run -N " + std::to_string(events_)}, name, "", true);
@@ -777,6 +818,19 @@ private:
     writeFile(join(folder_, "Sherpa.yaml"), c.str());
     const std::string name = version("sherpa3", "Sherpa 3");
     const std::string s = stem(output_);
+    if (hosted("sherpa3")) {
+      std::vector<std::string> argv = {program("sherpa3"), "-f", "Sherpa.yaml"};
+      for (const auto& a : arguments("sherpa3")) argv.push_back(a);
+      if (!runGenerator(argv, name, "", false, environment("sherpa3"))) return false;
+      // Sherpa 3.0.5 n'ajoute rien au nom de EVENT_OUTPUT ; d'autres ajoutent .hepmc3 ou .hepmc.gz.
+      const std::string target = join(folder_, s + ".hepmc");
+      if (!isFile(target)) {
+        if (isFile(join(folder_, s + ".hepmc3"))) std::rename(join(folder_, s + ".hepmc3").c_str(), target.c_str());
+        else if (isFile(join(folder_, s + ".hepmc.gz"))) inShell("gunzip -f " + quote(join(folder_, s + ".hepmc.gz")));
+        else if (isFile(join(folder_, s))) std::rename(join(folder_, s).c_str(), target.c_str());
+      }
+      return finishFromOutput(name);
+    }
     // Sherpa 3.0.5 n'ajoute rien au nom de EVENT_OUTPUT ; d'autres ajoutent .hepmc, .hepmc3 ou .hepmc.gz.
     const std::string cmd = "cd " + quote(folder_) + " && Sherpa -f Sherpa.yaml && (test -f " + s + ".hepmc || (test -f " + s +
                             ".hepmc3 && mv " + s + ".hepmc3 " + s + ".hepmc) || (test -f " + s + ".hepmc.gz && gunzip -f " + s +
@@ -817,8 +871,11 @@ private:
 
   bool whizard() {
     if (!needsProcess("WHIZARD")) return false;
-    const std::string exe = whizardPath();
+    const std::string exe = hosted("whizard3") ? program("whizard3") : whizardPath();
     if (exe.empty()) return failed("WHIZARD 3 is not installed in this image");
+    // Sur le Mac, WHIZARD s'arrête en fermant son HepMC3 (sa colle C++ et la HepMC3 livrée avec lui ne partagent
+    // pas la même bibliothèque standard) : l'hôte lui fait écrire du Les Houches, que l'on convertit.
+    const bool lhef = launch_["whizard3"]["sampleFormat"].str() == "lhef";
     const auto& p = process_;
     std::vector<std::string> names;
     std::vector<int> codes = {p.beams[0], p.beams[1]};
@@ -844,12 +901,22 @@ private:
       << "$hadronization_method = \"PYTHIA6\"\n"
       << "n_events = " << events_ << "\n"
       << "$sample = \"" << stem(output_) << "\"\n"
-      << "sample_format = hepmc\n";
+      << "sample_format = " << (lhef ? "lhef" : "hepmc") << "\n";
     const std::string extra = job_["extraSettings"].str();
     if (!extra.empty()) s << extra << "\n";
     s << "simulate (job)\n";
     writeFile(join(folder_, "job.sin"), s.str());
-    return runGenerator({exe, "job.sin"}, version("whizard3", "WHIZARD 3"), "", true, {}, "", whizardCrossSection);
+    const std::string name = version("whizard3", "WHIZARD 3");
+    if (!lhef) return runGenerator({exe, "job.sin"}, name, "", true, environment("whizard3"), "", whizardCrossSection);
+    if (!runGenerator({exe, "job.sin"}, name, "", false, environment("whizard3"))) return false;
+    const std::string lhe = join(folder_, stem(output_) + ".lhe");
+    if (!isFile(lhe)) return failed(name + " wrote no event file — see engine.log");
+    LheFile f = readLesHouches(lhe);
+    // La section efficace du journal porte son erreur d'intégration ; celle du fichier n'en a pas.
+    auto fromLog = whizardCrossSection(readFile(join(folder_, "engine.log")));
+    if (fromLog) f.crossSection = fromLog->first;
+    if (!writeHepMC(f, join(folder_, output_))) return failed("cannot write " + output_);
+    return finished(int(f.events.size()), f.crossSection, fromLog ? std::optional<double>(fromLog->second) : std::nullopt, name);
   }
 
   static std::string calchepName(int code) {
@@ -863,7 +930,9 @@ private:
 
   bool calchep() {
     if (!needsProcess("CalcHEP")) return false;
-    const std::string root = calchepRoot();
+    // Sur le Mac, l'hôte donne une copie du module et un dossier de travail sans espace : les Makefiles que
+    // CalcHEP engendre n'en supportent aucune, et le dossier d'un travail en porte deux.
+    const std::string root = hosted("calchep3") ? launch_["calchep3"]["root"].str() : calchepRoot();
     if (root.empty()) return failed("CalcHEP 3 is not installed in this image");
     const auto& p = process_;
     std::vector<std::string> names;
@@ -876,8 +945,10 @@ private:
     }
     std::string outgoing;
     for (size_t i = 2; i < names.size(); ++i) outgoing += (i > 2 ? "," : "") + names[i];
-    const std::string work = join(folder_, "calchep");
+    const std::string told = launch_["calchep3"]["workDirectory"].str();
+    const std::string work = told.empty() ? join(folder_, "calchep") : told;
     capture({"/bin/rm", "-rf", work});
+    capture({"/bin/mkdir", "-p", work.substr(0, work.find_last_of('/'))});
     if (!runGenerator({join(root, "mkWORKdir"), work}, "CalcHEP", "préparation du dossier de travail", false)) return false;
     std::remove(join(work, "lock.batch").c_str());
     std::ostringstream b;
@@ -896,7 +967,19 @@ private:
     writeFile(join(work, "batch_file"), b.str());
     std::string name = calchepVersion(root);
     if (name.empty()) name = "CalcHEP 3";
-    if (!runGenerator({join(work, "calchep_batch"), "batch_file"}, name, "", false, {}, work)) return false;
+    const bool elsewhere = !told.empty();
+    // Le dossier de travail est ailleurs : on ramène le compte rendu tant qu'il existe, sinon une panne ne
+    // laisserait rien à lire.
+    auto bringBack = [&]() {
+      if (!elsewhere) return;
+      const std::string back = join(folder_, "calchep");
+      capture({"/bin/rm", "-rf", back});
+      capture({"/bin/mkdir", "-p", back});
+      for (const char* n : {"batch_file", "html", "Processes"})
+        if (exists(join(work, n))) capture({"/bin/cp", "-R", join(work, n), back + "/"});
+    };
+    if (!runGenerator({join(work, "calchep_batch"), "batch_file"}, name, "", false, environment("calchep3"), work)) { bringBack(); return false; }
+    bringBack();
     // CalcHEP gzippe son fichier Les Houches : on le déballe, puis on le convertit comme le fait le passage sans gerbe.
     const std::string packed = join(work, "batch_results/events-single.lhe.gz");
     if (!isFile(packed)) return failed(name + " wrote no event file — see engine.log");
@@ -905,7 +988,7 @@ private:
     if (code != 0) return failed("cannot unpack " + packed + ": " + firstLine(out));
     LheFile f = readLesHouches(lhe);
     if (!writeHepMC(f, join(folder_, output_))) return failed("cannot write " + output_);
-    return finished(int(f.events.size()), f.crossSection, std::nullopt, name);
+    return finished(int(f.events.size()), f.crossSection, std::nullopt, name + " (niveau partonique)");
   }
 };
 
@@ -931,6 +1014,20 @@ int main(int argc, char* argv[]) {
   if (command == "run") {
     if (argc < 3) { std::cerr << "treelevel-tools: run needs the job folder" << std::endl; return 1; }
     std::string folder = argv[2];
+    Value launch;
+    int number = 1;
+    for (int i = 3; i + 1 < argc; ++i) {
+      const std::string a = argv[i];
+      if (a == "--number") number = std::atoi(argv[i + 1]);
+      if (a == "--launch") {
+        std::string error;
+        const std::string text = readFile(argv[i + 1]);
+        if (text.empty() || !jobcard::Parser(text).parse(launch, error)) {
+          std::cerr << "treelevel-tools: cannot read " << argv[i + 1] << (error.empty() ? "" : ": " + error) << std::endl;
+          return 1;
+        }
+      }
+    }
     if (folder.size() > 1 && folder.back() == '/') folder.pop_back();
     const std::string text = readFile(join(folder, "job.json"));
     Value job;
@@ -947,7 +1044,7 @@ int main(int argc, char* argv[]) {
       writeFile(join(folder, "status.json"), s.json());
       return 1;
     }
-    return Runner(folder, job).run() ? 0 : 1;
+    return Runner(folder, job, launch, number).run() ? 0 : 1;
   }
   std::cerr << "treelevel-tools: unknown command '" << command << "'" << std::endl;
   return 1;

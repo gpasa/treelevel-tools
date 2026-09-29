@@ -4,7 +4,7 @@ import Foundation
 /// beside itself (what the download button fetches), then for a system installation (Homebrew, MacPorts, a
 /// local build), so that a developer's machine works without downloading anything.
 enum Installation {
-    /// The modules shipped inside the application: TreeLevel MC Engine.app/Contents/Resources/Modules.
+    /// The modules shipped inside the application: TreeLevel Tools.app/Contents/Resources/Modules.
     /// Everything the engine needs travels with it — the user installs one application and nothing else.
     static var bundledModules: URL? {
         guard let resources = Bundle.main.resourceURL else { return nil }
@@ -15,7 +15,7 @@ enum Installation {
     /// The token the packaging script leaves where the build prefix was, in the modules' text files.
     static let modulePlaceholder = "@TREELEVEL_MODULE@"
 
-    /// Folder holding the downloaded modules: ~/Library/Application Support/TreeLevel MC Engine/Modules.
+    /// Folder holding the downloaded modules: ~/Library/Application Support/TreeLevel Tools/Modules.
     /// Ce que le moteur s'autorise à chercher hors de ce qu'il livre lui-même.
     ///
     /// Par défaut : rien. Seuls comptent les modules embarqués dans l'application et ceux installés dans
@@ -87,6 +87,17 @@ enum Installation {
         let dir = base.appendingPathComponent(MCEngineProtocol.supportFolderName, isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
+    }
+
+    /// The C++ engine that writes every generator's card and runs it: beside this program (Contents/MacOS in
+    /// the application, .build in a developer's tree).
+    static var nativeEngine: URL? {
+        let here = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().deletingLastPathComponent()
+        var candidates = [here.appendingPathComponent("treelevel-engine")]
+        if let executable = Bundle.main.executableURL {
+            candidates.insert(executable.deletingLastPathComponent().appendingPathComponent("treelevel-engine"), at: 0)
+        }
+        return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }
     }
 
     /// The Pythia driver: our own small program, built against the Pythia library. Looked up beside the
@@ -190,8 +201,8 @@ enum Installation {
         run(docker, ["image", "inspect", image]).code == 0
     }
 
-    /// Docker et l'image ensemble. Les modules installés restent prioritaires : ils tournent nativement,
-    /// sans machine virtuelle, et n'imposent pas que Docker soit démarré.
+    /// Docker et l'image ensemble. Quand l'utilisateur l'a choisie, elle mène tout, à l'exclusion des modules
+    /// du Mac : une seule voie, qu'il sait, plutôt qu'un mélange selon le générateur.
     static func container() -> (docker: URL, image: String)? {
         guard let docker else { return nil }
         // L'étiquette que le protocole partagé désigne, puis « latest » : refuser une image présente pour un
@@ -321,11 +332,15 @@ enum Installation {
     /// ils viennent, pour que personne ne s'étonne d'un numéro de version différent.
     static func capabilities(engineVersion: String) -> MCCapabilities {
         var caps = nativeCapabilities(engineVersion: engineVersion)
-        guard allowsContainer,
-              MCJob.Generator.allCases.contains(where: { !caps.generators.contains($0) }),
-              let container = container(),
+        guard allowsContainer else { return caps }
+        // L'image choisie mène tout : ce qu'elle déclare, et rien des modules du Mac. Absente ou Docker
+        // arrêté, le moteur n'offre rien plutôt que de revenir en douce au natif.
+        caps.generators = []
+        caps.versions = [:]
+        caps.colliderChannels = [:]
+        guard let container = container(),
               let fromImage = imageCapabilities(container.docker, container.image) else { return caps }
-        for generator in fromImage.generators where !caps.generators.contains(generator) {
+        for generator in fromImage.generators {
             caps.generators.append(generator)
             caps.versions[generator.rawValue] = (fromImage.versions[generator.rawValue] ?? generator.label) + " (conteneur)"
             // L'image dit elle-même ce qu'elle sait ouvrir ; une image antérieure à la 1.3 ne le dit pas, et

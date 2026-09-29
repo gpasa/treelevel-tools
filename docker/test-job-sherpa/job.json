@@ -16,5 +16,6 @@
     "couplingOrders" : { },
     "model" : "SM"
   },
+  "input" : "events.lhe",
   "output" : "events.hepmc"
 }

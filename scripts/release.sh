@@ -61,6 +61,8 @@ mkdir -p "$OUT"
 # --- Build ------------------------------------------------------------------
 say "Command line tool"
 /usr/bin/swift build -c release
+# Le moteur C++ : les cartes de tous les générateurs, les mêmes que dans l'image Linux.
+/usr/bin/clang++ -O2 -std=c++17 -I Backends/pythia Backends/engine/engine.cpp -o .build/release/treelevel-engine
 say "Application"
 (cd App && xcodegen generate >/dev/null)
 xcodebuild -project App/TreeLevelMCEngine.xcodeproj -scheme TreeLevelMCEngine -configuration Release \
@@ -70,6 +72,7 @@ APP_SRC="App/build/Build/Products/Release/TreeLevel Tools.app"
 APP="$OUT/TreeLevel Tools.app"
 cp -R "$APP_SRC" "$APP"
 cp .build/release/treelevel-tools "$APP/Contents/MacOS/treelevel-tools"
+cp .build/release/treelevel-engine "$APP/Contents/MacOS/treelevel-engine"
 
 # --- Modules -----------------------------------------------------------------
 # L'utilisateur n'installe qu'une application : les générateurs voyagent dedans. Ils ont été rendus

@@ -7,17 +7,21 @@ APPS="$HOME/Applications"
 DEST="$APPS/TreeLevel Tools.app"
 
 /usr/bin/swift build -c release
+# Le moteur C++ : les cartes de tous les générateurs, les mêmes que dans l'image Linux.
+/usr/bin/clang++ -O2 -std=c++17 -I Backends/pythia Backends/engine/engine.cpp -o .build/release/treelevel-engine
 (cd App && xcodegen generate >/dev/null)
 xcodebuild -project App/TreeLevelMCEngine.xcodeproj -scheme TreeLevelMCEngine -configuration Release \
   -derivedDataPath App/build CODE_SIGNING_ALLOWED=NO | grep -E "error:|BUILD"
 
-osascript -e 'tell application id "org.pasahome.TreeLevelMCEngine" to quit' 2>/dev/null || true
+osascript -e 'tell application id "org.pasahome.TreeLevelTools" to quit' 2>/dev/null || true
 mkdir -p "$APPS"
 rm -rf "$DEST"
 /usr/bin/ditto "App/build/Build/Products/Release/TreeLevel Tools.app" "$DEST"
 cp .build/release/treelevel-tools "$DEST/Contents/MacOS/treelevel-tools"
+cp .build/release/treelevel-engine "$DEST/Contents/MacOS/treelevel-engine"
 if security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
   codesign --force --timestamp --options runtime --sign "Developer ID Application" "$DEST/Contents/MacOS/treelevel-tools"
+  codesign --force --timestamp --options runtime --sign "Developer ID Application" "$DEST/Contents/MacOS/treelevel-engine"
   codesign --force --timestamp --options runtime --sign "Developer ID Application" "$DEST"
   codesign --verify --strict "$DEST"
 fi
