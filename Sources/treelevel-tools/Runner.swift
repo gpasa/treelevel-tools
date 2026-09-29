@@ -79,50 +79,22 @@ struct Runner {
         guard let driver = Installation.pythiaDriver else {
             return finish(failed: "the Pythia 8 module is not installed", start: start)
         }
-        // Two ways in. Usually Pythia dresses the events TreeLevel computed, and reads them from the Les
-        // Houches file. In collider mode it makes the hard process itself, from beams and open channels,
-        // and the Les Houches file has no part in it — there is nothing to dress that we chose.
-        // The generators run with the job folder as their working directory and are given relative names:
-        // Pythia reads `Beams:LHEF` as a single word, so a path with spaces (and the job folder lives under
-        // "Application Support") would be cut short.
-        // La QCD molle est faite de ses interactions multiples : la ligne générale doit les allumer, et
-        // c'est elle qui tranche — écrite plus bas, elle écraserait un réglage posé à côté de la voie.
-        // « Tout » s'étend ici en ce que ces faisceaux permettent ; tout ce qui suit voit la forme étendue.
+        // La carte de Pythia n'est plus écrite ici : le pilote la tire lui-même de job.json (JobCard.h), une
+        // seule fois pour le Mac, Windows et l'image. Il la dépose à côté du travail — pythia.cmnd — pour le
+        // journal. Ici ne restent que les décisions d'orchestration : refuser une machine impossible avant de
+        // la lancer, et tirer en deux fois ce qui doit l'être.
+        guard Self.driverWritesCards(driver) else {
+            return finish(failed: "the Pythia 8 module is older than this engine and cannot write its own card — "
+                               + "reinstall the Pythia 8 module", start: start)
+        }
         let hard = job.hardProcess.map(Self.expanded)
-        let wantsSoft = hard?.colliderMode == .collider
-            && hard?.channels.contains(where: { $0 == .soft || $0 == .inclusive }) == true
-        let beams: String
         if let p = hard, p.colliderMode == .collider {
             // Pythia refuse ces cas en imprimant une table de processus vide, sans un mot d'explication,
             // et le journal ne montre alors qu'une bannière. On les nomme donc avant de le lancer.
             if let raison = Self.colliderObjection(p, driver: driver) {
                 return finish(failed: raison, start: start)
             }
-            guard let block = Self.pythiaCollider(p) else {
-                return finish(failed: "collider mode needs two beams and their energies", start: start)
-            }
-            beams = block
-        } else {
-            beams = """
-            Beams:frameType = 4
-            Beams:LHEF = \(job.input)
-            """
         }
-        var settings = """
-        \(beams)
-        Main:numberOfEvents = \(job.events)
-        Random:setSeed = on
-        Random:seed = \(job.seed % 900_000_000)
-        PartonLevel:ISR = \(job.shower ? "on" : "off")
-        PartonLevel:FSR = \(job.shower ? "on" : "off")
-        PartonLevel:MPI = \(job.multipleInteractions || wantsSoft ? "on" : "off")
-        HadronLevel:all = \(job.hadronisation ? "on" : "off")
-        HadronLevel:Decay = \(job.decays ? "on" : "off")
-        Print:quiet = on
-        Next:numberShowEvent = 0
-        """
-        if let tune = job.tune, !tune.isEmpty { settings += "\nTune:pp = \(tune)" }
-        if let extra = job.extraSettings, !extra.isEmpty { settings += "\n" + extra }
         let nom = "Pythia 8 " + (Installation.capabilities(engineVersion: engineVersion).versions["pythia8"] ?? "")
         let environnement = ModuleSetup.pythiaEnvironment(driver: driver)
 
@@ -130,14 +102,16 @@ struct Runner {
         // distinctes, sans quoi les deux passes exploreraient le même hasard.
         if let p = hard, p.colliderMode == .collider, p.mixConfigurations,
            p.channels.contains(.photoproduction), p.channels.count > 1 {
-            return try assembleTwoConfigurations(p, settings: settings, driver: driver, name: nom,
-                                                 environment: environnement, start: start)
+            return try assembleTwoConfigurations(p, driver: driver, name: nom, environment: environnement, start: start)
         }
-
-        let config = folder.url.appendingPathComponent("pythia.cmnd")
-        try settings.write(to: config, atomically: true, encoding: .utf8)
-        return try runProcess(driver, ["--config", config.lastPathComponent, "--out", job.output], start: start,
+        return try runProcess(driver, ["--job", MCEngineProtocol.jobFileName, "--out", job.output], start: start,
                               name: nom, environment: environnement)
+    }
+
+    /// Whether this Pythia driver writes its card from the job (`--features` says « job »). A module built
+    /// before the 0.4 engine does not, and running it would fail on an argument it does not know.
+    static func driverWritesCards(_ driver: URL) -> Bool {
+        Process.output(driver, ["--features"], timeout: 10)?.split(whereSeparator: \.isWhitespace).contains("job") ?? false
     }
 
     /// Tire les faisceaux tels quels, puis le flux de photons, et réunit les deux en un seul échantillon.
@@ -145,30 +119,17 @@ struct Runner {
     /// Le partage se fait aux sections efficaces — l'échantillon est alors ce que la machine fait, et chaque
     /// événement compte pour un — ou par moitiés si on le demande, auquel cas la proportion passe dans les
     /// poids et la configuration rare devient regardable.
-    private func assembleTwoConfigurations(_ p: MCProcess, settings: String, driver: URL, name: String,
+    private func assembleTwoConfigurations(_ p: MCProcess, driver: URL, name: String,
                                            environment: [String: String], start: Date) throws -> Bool {
-        func passe(_ voies: [MCProcess.Channel], seed: Int, sortie: String, étape: String) throws -> Bool {
-            var morceau = p
-            morceau.channels = voies
-            guard let faisceaux = Self.pythiaCollider(morceau) else { return false }
-            var texte = settings
-            // Remplacer le bloc de faisceaux : les réglages des voies en font partie.
-            if let debut = texte.range(of: "Beams:idA"), let fin = texte.range(of: "Main:numberOfEvents") {
-                texte.replaceSubrange(debut.lowerBound..<fin.lowerBound, with: faisceaux + "\n")
-            }
-            texte = texte.replacingOccurrences(of: "Random:seed = \(job.seed % 900_000_000)",
-                                               with: "Random:seed = \(seed % 900_000_000)")
-            let config = folder.url.appendingPathComponent("pythia.\(étape).cmnd")
-            try texte.write(to: config, atomically: true, encoding: .utf8)
-            return try runProcess(driver, ["--config", config.lastPathComponent, "--out", sortie],
-                                  start: start, name: name, step: étape, finishNow: false,
-                                  environment: environment)
+        // Chaque moitié, le pilote l'écrit lui-même : --part dit laquelle, --seed-offset lui donne son hasard.
+        func passe(_ part: String, seedOffset: Int, sortie: String, étape: String) throws -> Bool {
+            try runProcess(driver, ["--job", MCEngineProtocol.jobFileName, "--part", part, "--seed-offset", String(seedOffset),
+                                    "--out", sortie],
+                           start: start, name: name, step: étape, finishNow: false, environment: environment)
         }
 
-        let autres = p.channels.filter { $0 != .photoproduction }
-        guard try passe(autres, seed: job.seed, sortie: "events.beams.hepmc", étape: "faisceaux") else { return false }
-        guard try passe([.photoproduction], seed: job.seed + 1, sortie: "events.photons.hepmc",
-                        étape: "flux de photons") else { return false }
+        guard try passe("beams", seedOffset: 0, sortie: "events.beams.hepmc", étape: "faisceaux") else { return false }
+        guard try passe("photons", seedOffset: 1, sortie: "events.photons.hepmc", étape: "flux de photons") else { return false }
 
         let a = try HepMCAssembly.read(folder.url.appendingPathComponent("events.beams.hepmc"))
         let b = try HepMCAssembly.read(folder.url.appendingPathComponent("events.photons.hepmc"))
@@ -259,120 +220,6 @@ struct Runner {
                  + "annihilate, which is the boson-exchange family"
         }
         return nil
-    }
-
-    /// The Pythia settings that put it in front of a machine rather than in front of our events: the two
-    /// beams, their energy, and the families of hard channels left open. What comes out is everything those
-    /// channels make — the diagram's final state among the rest — and the selection happens afterwards, in
-    /// TreeLevel, on the events as they are reconstructed. That is the whole point: a real ring cannot be
-    /// asked for one final state, so the cross section we end up quoting is measured, not requested.
-    static func pythiaCollider(_ p: MCProcess) -> String? {
-        guard p.beams.count == 2, p.beamEnergies.count == 2 else { return nil }
-        var lines = ["Beams:idA = \(p.beams[0])", "Beams:idB = \(p.beams[1])"]
-        if p.fixedTarget {
-            // Le repos de la cible se dit par ses trois composantes nulles, et non par une énergie égale à
-            // sa masse : à donner un nombre voisin de la masse on lui laisse une petite impulsion, et
-            // l'énergie de collision n'est plus tout à fait celle qu'on croit. `beamEnergies[0]` est alors
-            // l'impulsion du faisceau, et Pythia tire l'énergie de la cible de sa propre table de masses.
-            lines += ["Beams:frameType = 3",
-                      "Beams:pxA = 0", "Beams:pyA = 0", "Beams:pzA = \(p.beamEnergies[0])",
-                      "Beams:pxB = 0", "Beams:pyB = 0", "Beams:pzB = 0"]
-        } else if abs(p.beamEnergies[0] - p.beamEnergies[1]) < 1e-9 {
-            // Equal energies are said once, as the energy in the centre of mass; unequal ones oblige Pythia
-            // to boost, and it wants them one by one.
-            lines += ["Beams:frameType = 1", "Beams:eCM = \(p.centreOfMassEnergy)"]
-        } else {
-            lines += ["Beams:frameType = 2",
-                      "Beams:eA = \(p.beamEnergies[0])", "Beams:eB = \(p.beamEnergies[1])"]
-        }
-        // A charged current needs a beam that can change flavour. Two leptons of opposite charge cannot,
-        // so switching ffbar2W on there would only print a warning and produce nothing.
-        let leptonic = p.beams.allSatisfy { (11...16).contains(abs($0)) }
-        let hadronic = p.beams.map { abs($0) >= 100 }
-        for channel in p.channels {
-            switch channel {
-            case .singleBoson:
-                lines.append("WeakSingleBoson:ffbar2gmZ = on")
-                if !leptonic { lines.append("WeakSingleBoson:ffbar2W = on") }
-            case .bosonPair:
-                lines += ["WeakDoubleBoson:ffbar2gmZgmZ = on", "WeakDoubleBoson:ffbar2ZW = on",
-                          "WeakDoubleBoson:ffbar2WW = on"]
-            case .bosonExchange:
-                // La voie t : les deux faisceaux se diffusent en échangeant un boson. Rien ne s'annihile,
-                // et c'est ce qui rend un anneau électron-proton possible. Le photon échangé diverge quand
-                // Q² tend vers zéro ; Pythia pose son propre plancher (`pTHatMinDiverge`) faute de mieux,
-                // et une coupure explicite le remplace dès qu'on en donne une.
-                lines += ["WeakBosonExchange:ff2ff(t:gmZ) = on", "WeakBosonExchange:ff2ff(t:W) = on"]
-            case .qcd:
-                // La diffusion dure de partons : l'essentiel de ce que produit un anneau à protons. Sans
-                // elle, une machine hadronique ne donne que du Drell–Yan, ce qui est un canal et non un
-                // collisionneur.
-                lines.append("HardQCD:all = on")
-            case .photoproduction:
-                // Le lepton n'entre plus comme lepton : il entre par le photon qu'il rayonne. Sur un hadron
-                // c'est la photoproduction, qui vaut près de quatre fois la diffusion profondément
-                // inélastique à HERA ; entre deux leptons, la physique à deux photons. Pythia ne fait pas
-                // collisionner le lepton et son photon dans le même tirage — d'où le refus de combiner.
-                lines += ["PDF:lepton2gamma = on", "Photon:ProcessType = 0", "HardQCD:all = on"]
-            case .soft:
-                // La QCD molle : élastique, diffractif, fond non diffractif. C'est la seule famille qui rende
-                // « tout ce que la machine produit » littéralement vrai — cent millibarns à 13 TeV, contre
-                // moins d'un pour la diffusion dure avec son seuil.
-                lines.append("SoftQCD:all = on")
-            case .annihilation:
-                // Le courant neutre en voie s, seul : ff̄ → γ*/Z → ff̄. Le pic du Z, le Drell–Yan, les paires
-                // de neutrinos qu'un photon rayonné trahit.
-                lines.append("WeakSingleBoson:ffbar2gmZ = on")
-            case .neutralCurrent:
-                // La diffusion par un γ ou un Z en voie t : Rutherford, Bhabha, la diffusion profondément
-                // inélastique. Elle diverge aux petits transferts ; le seuil en Q² est posé plus bas.
-                lines.append("WeakBosonExchange:ff2ff(t:gmZ) = on")
-            case .chargedCurrent:
-                // Le W : échangé en voie t — e⁺e⁻ → νe ν̄e, e p → ν X —, et produit quand deux hadrons
-                // apportent un quark et un antiquark de saveurs voisines. Pas de W seul entre deux leptons.
-                lines.append("WeakBosonExchange:ff2ff(t:W) = on")
-                if hadronic[0] && hadronic[1] { lines.append("WeakSingleBoson:ffbar2W = on") }
-            case .inclusive:
-                // Entre deux hadrons, « ce que le détecteur voit », c'est toute la section efficace
-                // inélastique : le rebond élastique laisse les deux protons dans le tube. Les machines à
-                // leptons sont étendues avant d'arriver ici (voir `expanded`).
-                lines.append("SoftQCD:inelastic = on")
-            }
-        }
-        // La diffusion profondément inélastique : le recul du dipôle est ce que Pythia recommande pour elle.
-        if hadronic[0] != hadronic[1], p.channels.contains(where: { $0 == .neutralCurrent || $0 == .chargedCurrent }) {
-            lines.append("SpaceShower:dipoleRecoil = on")
-        }
-        // Le transfert minimal : combien les faisceaux doivent se heurter pour que la diffusion compte. Sans
-        // lui, l'échange d'un photon est infini — Rutherford aux petits angles.
-        if p.channels.contains(where: { $0 == .neutralCurrent || $0 == .chargedCurrent }),
-           let q2 = p.minimumQ2 ?? (p.channels.contains(.neutralCurrent) ? Self.defaultQ2(p) : nil), q2 > 1 {
-            lines.append("PhaseSpace:Q2Min = \(q2)")
-        }
-        // La section efficace QCD croît sans borne quand l'impulsion transverse tend vers zéro : cette
-        // famille-là exige donc un plancher. S'il en est donné un, on l'emploie ; sinon vingt GeV, ce qui
-        // garde l'échantillon de diffusion dure qu'on voulait voir plutôt qu'un échantillon mou énorme.
-        // Le seuil en pT ne vaut que pour la QCD : posé sur une autre famille, il la couperait à l'insu de
-        // qui la demande (la diffusion profondément inélastique, par exemple, réduite à pT > 20 GeV).
-        let jets = p.channels.contains(.qcd) || p.channels.contains(.photoproduction)
-        var plancher = jets ? p.minimumPT : nil
-        if (plancher ?? 0) <= 0, jets { plancher = 20 }
-        // Sauf si l'on vient justement voir le mou : un seuil retrancherait ce qu'on était venu regarder.
-        if p.channels.contains(.soft) { plancher = nil }
-        if let pt = plancher, pt > 0 { lines.append("PhaseSpace:pTHatMin = \(pt)") }
-        // La zone lumineuse : les collisions n'ont pas lieu en un point mais dans le volume où les deux
-        // paquets se croisent, gaussien, étroit en travers et long le long du faisceau. Tailles typiques (mm) :
-        // un anneau à leptons comme LEP (plat : 150 µm × 5 µm, 1 cm en z), un collisionneur de hadrons comme le
-        // LHC (16 µm, 4 cm en z), un anneau ep comme HERA (80 µm × 20 µm, 10 cm en z). Sur cible fixe, la
-        // cible fixe le point.
-        if !p.fixedTarget {
-            let lepton = { (id: Int) in (11...16).contains(abs(id)) }
-            let (sx, sy, sz): (Double, Double, Double) = p.beams.allSatisfy(lepton) ? (0.15, 0.005, 10)
-                : p.beams.contains(where: lepton) ? (0.08, 0.02, 100) : (0.016, 0.016, 40)
-            lines += ["Beams:allowVertexSpread = on", "Beams:sigmaVertexX = \(sx)", "Beams:sigmaVertexY = \(sy)",
-                      "Beams:sigmaVertexZ = \(sz)", "Beams:maxDevVertex = 4"]
-        }
-        return lines.joined(separator: "\n")
     }
 
     /// Le transfert minimal que voit un détecteur : sur un anneau à leptons, une déviation de dix degrés dans

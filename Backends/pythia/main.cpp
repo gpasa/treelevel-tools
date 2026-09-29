@@ -5,8 +5,13 @@
 // nothing but Pythia itself — MacPorts' `pythia` port ships neither Pythia8Plugins nor HepMC3.
 // When Pythia's own HepMC3 interface is available, build with -DTREELEVEL_WITH_HEPMC3 to use it instead.
 //
+//   treelevel-pythia --job job/job.json --out job/events.hepmc [--part beams|photons] [--seed-offset n]
 //   treelevel-pythia --config job/pythia.cmnd --out job/events.hepmc
-//   treelevel-pythia --version
+//   treelevel-pythia --job job/job.json --print-card      (the card only)
+//   treelevel-pythia --version | --features
+//
+// With --job the driver writes the card itself (JobCard.h), next to the job as pythia.cmnd — or
+// pythia.<part>.cmnd for one half of an assembled machine —, and runs it.
 //
 // Build:  make -C Backends/pythia            (MacPorts, Homebrew or a local build of Pythia 8)
 //
@@ -16,6 +21,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <string>
 #include <sys/stat.h>
 #include <map>
@@ -30,6 +36,7 @@
 #endif
 #endif
 #include "Pythia8/Pythia.h"
+#include "JobCard.h"
 #ifdef TREELEVEL_WITH_HEPMC3
 #include "Pythia8Plugins/HepMC3.h"
 #endif
@@ -179,15 +186,41 @@ private:
 }  // namespace
 
 int main(int argc, char* argv[]) {
-  std::string config, out;
+  std::string config, out, jobPath, part;
+  int seedOffset = 0;
+  bool printCard = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--version") { std::cout << PYTHIA_VERSION << std::endl; return 0; }
+    // Ce que ce pilote sait faire, pour qu'un hôte sache s'il peut lui confier la carte.
+    if (a == "--features") { std::cout << "job" << std::endl; return 0; }
     if (a == "--config" && i + 1 < argc) config = argv[++i];
     else if (a == "--out" && i + 1 < argc) out = argv[++i];
+    else if (a == "--job" && i + 1 < argc) jobPath = argv[++i];
+    else if (a == "--part" && i + 1 < argc) part = argv[++i];
+    else if (a == "--seed-offset" && i + 1 < argc) seedOffset = std::atoi(argv[++i]);
+    else if (a == "--print-card") printCard = true;             // la carte, sans rien lancer
+  }
+  if (!jobPath.empty()) {
+    std::ifstream in(jobPath, std::ios::binary);
+    if (!in) { std::cerr << "cannot read " << jobPath << std::endl; return 1; }
+    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    jobcard::Value job;
+    std::string error, cardText;
+    if (!jobcard::Parser(text).parse(job, error) || !jobcard::card(job, part, seedOffset, cardText, error)) {
+      std::cerr << error << std::endl;
+      return 3;
+    }
+    if (printCard) { std::cout << cardText; return 0; }
+    const size_t cut = jobPath.find_last_of("\\/");
+    const std::string folder = cut == std::string::npos ? "" : jobPath.substr(0, cut + 1);
+    config = folder + (part.empty() ? "pythia.cmnd" : "pythia." + part + ".cmnd");
+    std::ofstream card(config, std::ios::binary);
+    card << cardText;
+    if (!card) { std::cerr << "cannot write " << config << std::endl; return 1; }
   }
   if (config.empty() || out.empty()) {
-    std::cerr << "usage: treelevel-pythia --config file.cmnd --out events.hepmc" << std::endl;
+    std::cerr << "usage: treelevel-pythia --job job.json | --config file.cmnd --out events.hepmc" << std::endl;
     return 2;
   }
 
