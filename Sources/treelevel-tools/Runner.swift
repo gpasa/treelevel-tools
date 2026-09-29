@@ -87,10 +87,12 @@ struct Runner {
         // "Application Support") would be cut short.
         // La QCD molle est faite de ses interactions multiples : la ligne générale doit les allumer, et
         // c'est elle qui tranche — écrite plus bas, elle écraserait un réglage posé à côté de la voie.
-        let wantsSoft = job.hardProcess?.colliderMode == .collider
-            && job.hardProcess?.channels.contains(.soft) == true
+        // « Tout » s'étend ici en ce que ces faisceaux permettent ; tout ce qui suit voit la forme étendue.
+        let hard = job.hardProcess.map(Self.expanded)
+        let wantsSoft = hard?.colliderMode == .collider
+            && hard?.channels.contains(where: { $0 == .soft || $0 == .inclusive }) == true
         let beams: String
-        if let p = job.hardProcess, p.colliderMode == .collider {
+        if let p = hard, p.colliderMode == .collider {
             // Pythia refuse ces cas en imprimant une table de processus vide, sans un mot d'explication,
             // et le journal ne montre alors qu'une bannière. On les nomme donc avant de le lancer.
             if let raison = Self.colliderObjection(p, driver: driver) {
@@ -126,7 +128,7 @@ struct Runner {
 
         // Deux configurations de machine à réunir : on tire séparément, puis on assemble. Deux graines
         // distinctes, sans quoi les deux passes exploreraient le même hasard.
-        if let p = job.hardProcess, p.colliderMode == .collider, p.mixConfigurations,
+        if let p = hard, p.colliderMode == .collider, p.mixConfigurations,
            p.channels.contains(.photoproduction), p.channels.count > 1 {
             return try assembleTwoConfigurations(p, settings: settings, driver: driver, name: nom,
                                                  environment: environnement, start: start)
@@ -234,6 +236,10 @@ struct Runner {
             case .qcd, .soft: return hadronic[0] && hadronic[1]
             // Le flux de photons est ce qu'un lepton rayonne : il en faut au moins un.
             case .photoproduction: return !hadronic[0] || !hadronic[1]
+            case .annihilation: return annihilent
+            case .neutralCurrent, .inclusive: return true
+            // Un W échangé ou produit : deux hadrons, un lepton et un hadron, ou un lepton et son antiparticule.
+            case .chargedCurrent: return hadronic[0] || hadronic[1] || p.beams[0] == -p.beams[1]
             }
         }
         if ouvertes.isEmpty && !p.channels.isEmpty {
@@ -282,6 +288,7 @@ struct Runner {
         // A charged current needs a beam that can change flavour. Two leptons of opposite charge cannot,
         // so switching ffbar2W on there would only print a warning and produce nothing.
         let leptonic = p.beams.allSatisfy { (11...16).contains(abs($0)) }
+        let hadronic = p.beams.map { abs($0) >= 100 }
         for channel in p.channels {
             switch channel {
             case .singleBoson:
@@ -312,15 +319,44 @@ struct Runner {
                 // « tout ce que la machine produit » littéralement vrai — cent millibarns à 13 TeV, contre
                 // moins d'un pour la diffusion dure avec son seuil.
                 lines.append("SoftQCD:all = on")
+            case .annihilation:
+                // Le courant neutre en voie s, seul : ff̄ → γ*/Z → ff̄. Le pic du Z, le Drell–Yan, les paires
+                // de neutrinos qu'un photon rayonné trahit.
+                lines.append("WeakSingleBoson:ffbar2gmZ = on")
+            case .neutralCurrent:
+                // La diffusion par un γ ou un Z en voie t : Rutherford, Bhabha, la diffusion profondément
+                // inélastique. Elle diverge aux petits transferts ; le seuil en Q² est posé plus bas.
+                lines.append("WeakBosonExchange:ff2ff(t:gmZ) = on")
+            case .chargedCurrent:
+                // Le W : échangé en voie t — e⁺e⁻ → νe ν̄e, e p → ν X —, et produit quand deux hadrons
+                // apportent un quark et un antiquark de saveurs voisines. Pas de W seul entre deux leptons.
+                lines.append("WeakBosonExchange:ff2ff(t:W) = on")
+                if hadronic[0] && hadronic[1] { lines.append("WeakSingleBoson:ffbar2W = on") }
+            case .inclusive:
+                // Entre deux hadrons, « ce que le détecteur voit », c'est toute la section efficace
+                // inélastique : le rebond élastique laisse les deux protons dans le tube. Les machines à
+                // leptons sont étendues avant d'arriver ici (voir `expanded`).
+                lines.append("SoftQCD:inelastic = on")
             }
+        }
+        // La diffusion profondément inélastique : le recul du dipôle est ce que Pythia recommande pour elle.
+        if hadronic[0] != hadronic[1], p.channels.contains(where: { $0 == .neutralCurrent || $0 == .chargedCurrent }) {
+            lines.append("SpaceShower:dipoleRecoil = on")
+        }
+        // Le transfert minimal : combien les faisceaux doivent se heurter pour que la diffusion compte. Sans
+        // lui, l'échange d'un photon est infini — Rutherford aux petits angles.
+        if p.channels.contains(where: { $0 == .neutralCurrent || $0 == .chargedCurrent }),
+           let q2 = p.minimumQ2 ?? (p.channels.contains(.neutralCurrent) ? Self.defaultQ2(p) : nil), q2 > 1 {
+            lines.append("PhaseSpace:Q2Min = \(q2)")
         }
         // La section efficace QCD croît sans borne quand l'impulsion transverse tend vers zéro : cette
         // famille-là exige donc un plancher. S'il en est donné un, on l'emploie ; sinon vingt GeV, ce qui
         // garde l'échantillon de diffusion dure qu'on voulait voir plutôt qu'un échantillon mou énorme.
-        var plancher = p.minimumPT
-        if (plancher ?? 0) <= 0, p.channels.contains(.qcd) || p.channels.contains(.photoproduction) {
-            plancher = 20
-        }
+        // Le seuil en pT ne vaut que pour la QCD : posé sur une autre famille, il la couperait à l'insu de
+        // qui la demande (la diffusion profondément inélastique, par exemple, réduite à pT > 20 GeV).
+        let jets = p.channels.contains(.qcd) || p.channels.contains(.photoproduction)
+        var plancher = jets ? p.minimumPT : nil
+        if (plancher ?? 0) <= 0, jets { plancher = 20 }
         // Sauf si l'on vient justement voir le mou : un seuil retrancherait ce qu'on était venu regarder.
         if p.channels.contains(.soft) { plancher = nil }
         if let pt = plancher, pt > 0 { lines.append("PhaseSpace:pTHatMin = \(pt)") }
@@ -337,6 +373,40 @@ struct Runner {
                       "Beams:sigmaVertexZ = \(sz)", "Beams:maxDevVertex = 4"]
         }
         return lines.joined(separator: "\n")
+    }
+
+    /// Le transfert minimal que voit un détecteur : sur un anneau à leptons, une déviation de dix degrés dans
+    /// le centre de masse (Q² = s (1 − cos θ) / 2) ; sur un anneau électron-proton, 4 GeV², la frontière
+    /// habituelle de la diffusion profondément inélastique ; entre deux hadrons, (20 GeV)².
+    static func defaultQ2(_ p: MCProcess) -> Double {
+        let lepton = { (id: Int) in (11...16).contains(abs(id)) }
+        if p.beams.allSatisfy(lepton) {
+            let s = p.centreOfMassEnergy * p.centreOfMassEnergy
+            return s * (1 - cos(10 * Double.pi / 180)) / 2
+        }
+        return p.beams.contains(where: lepton) ? 4 : 400
+    }
+
+    /// « Tout ce que le détecteur voit » sur une machine qui a un lepton : chaque famille que ces faisceaux
+    /// permettent, et le flux de photons à part, puisqu'il remplace le faisceau — deux tirages assemblés
+    /// dans les proportions de la nature. Entre deux hadrons rien à étendre : c'est la QCD molle inélastique.
+    static func expanded(_ p: MCProcess) -> MCProcess {
+        guard p.colliderMode == .collider, p.channels == [.inclusive], p.beams.count == 2 else { return p }
+        let lepton = { (id: Int) in (11...16).contains(abs(id)) }
+        guard p.beams.contains(where: lepton) else { return p }
+        var q = p
+        if p.beams.allSatisfy(lepton) {
+            // Deux leptons : l'annihilation et ses paires de bosons si ce sont une particule et son
+            // antiparticule, la diffusion et le W échangé, et la physique à deux photons.
+            let annihilent = p.beams[0] == -p.beams[1]
+            q.channels = (annihilent ? [.annihilation, .bosonPair] : []) + [.neutralCurrent, .chargedCurrent, .photoproduction]
+        } else {
+            q.channels = [.neutralCurrent, .chargedCurrent, .photoproduction]
+        }
+        q.mixConfigurations = true
+        q.mixEqualShares = false
+        if q.minimumQ2 == nil { q.minimumQ2 = defaultQ2(p) }
+        return q
     }
 
     /// Herwig 7: written as a `.in` file, then `Herwig read` and `Herwig run`.
