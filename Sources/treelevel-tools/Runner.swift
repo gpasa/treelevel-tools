@@ -74,8 +74,41 @@ struct Runner {
     }
 
     /// Pythia 8 through our small driver, which reads the LHE file and writes HepMC3.
+    /// The beams of a Les Houches file (IDBMUP of its <init> block), or [] when it cannot be read.
+    static func lesHouchesBeams(_ url: URL) -> [Int] {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return [] }
+        defer { try? handle.close() }
+        let head = String(decoding: handle.readData(ofLength: 64 * 1024), as: UTF8.self)
+        guard let r = head.range(of: "<init>") else { return [] }
+        let line = head[r.upperBound...].split(whereSeparator: \.isNewline).first ?? ""
+        let codes = line.split(separator: " ").prefix(2).compactMap { Int($0) }
+        return codes.count == 2 ? codes : []
+    }
+
+    /// Habiller les événements de TreeLevel n'a de sens qu'entre deux leptons. Un faisceau de TreeLevel est la
+    /// particule elle-même, sans structure ; Pythia et Herwig prêtent d'office une structure à tout faisceau
+    /// qui n'est pas un lepton — des partons au proton, une part hadronique au photon — et n'y retrouvent pas
+    /// nos événements : Herwig s'arrête (« Could not find appropriate PartonBin objects »), Pythia échoue sur
+    /// ses vérifications de couleur ou, sous 10 GeV, refuse. Des quarks ou des gluons pour faisceaux sont pires :
+    /// sans reste de faisceau, leur couleur ne se referme sur rien. Vérifié sur u ū → t t̄, e γ → e γ et
+    /// π⁺ p → π⁺ p, avec les deux générateurs. On le dit avant de lancer.
+    func dressingObjection() -> String? {
+        guard job.generator == .pythia8 || job.generator == .herwig7, job.hardProcess?.colliderMode != .collider else { return nil }
+        let beams = Self.lesHouchesBeams(folder.url.appendingPathComponent(job.input))
+        guard beams.count == 2, !beams.allSatisfy({ (11...16).contains(abs($0)) }) else { return nil }
+        if beams.contains(where: { (1...6).contains(abs($0)) || $0 == 21 }) {
+            return "the beams are free quarks or gluons: without beam remnants their colour closes on nothing, and no "
+                 + "generator can shower or hadronise these events — keep them at parton level, or collide hadrons "
+                 + "in machine mode"
+        }
+        return "only collisions of leptons can be dressed: \(job.generator.label) gives any other beam a structure — "
+             + "partons to a hadron, a hadronic part to a photon — which these events, made of whole particles, do "
+             + "not have. Keep them at parton level, or use the machine mode"
+    }
+
     private func pythia(start: Date) throws -> Bool {
         if let result = containerIfNotNative(start) { return result }
+        if let raison = dressingObjection() { return finish(failed: raison, start: start) }
         guard let driver = Installation.pythiaDriver else {
             return finish(failed: "the Pythia 8 module is not installed", start: start)
         }
@@ -259,6 +292,7 @@ struct Runner {
     /// Herwig 7: written as a `.in` file, then `Herwig read` and `Herwig run`.
     private func herwig(start: Date) throws -> Bool {
         if let result = containerIfNotNative(start) { return result }
+        if let raison = dressingObjection() { return finish(failed: raison, start: start) }
         guard let herwig = Installation.herwig else {
             return finish(failed: "the Herwig 7 module is not installed", start: start)
         }
