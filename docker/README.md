@@ -8,17 +8,20 @@ déjà construits, avec le moteur lui-même, et TreeLevel n'a plus qu'à tendre 
 docker run --rm -v "<dossier>:/job" ghcr.io/gpasa/treelevel-tools:<version> run /job
 ```
 
-Le moteur qui tourne dedans est exactement celui de Windows — même code, même protocole. Il lit `/job/job.json`,
+Le moteur qui tourne dedans est le moteur C++ de `Backends/engine`, celui-là même que TreeLevel Tools embarque au
+Mac — même code, même protocole, mêmes cartes. Il lit `/job/job.json`,
 écrit `status.json`, `engine.log` et `events.hepmc` dans le même dossier : le montage *est* le protocole, rien
 ne passe par le réseau.
 
 ## Pour l'utilisateur
 
 ```powershell
-docker pull ghcr.io/gpasa/treelevel-tools:0.3.0
+docker pull ghcr.io/gpasa/treelevel-tools:0.4.0
 ```
 
-C'est tout — TreeLevel voit alors les cinq générateurs apparaître dans sa liste. L'image n'est
+C'est tout — TreeLevel voit alors les cinq générateurs apparaître dans sa liste (au Mac, une fois cochée la case
+« tout faire tourner dans l'image Docker » de TreeLevel Tools : l'image mène alors tous les travaux). TreeLevel
+Tools 0.3.x, sous Windows, demande encore l'image `0.3.0`, qui reste publiée. L'image n'est
 **jamais** tirée sans qu'on le demande : le moteur regarde si elle est là (`docker image inspect`), et si elle
 n'y est pas, il ne propose rien plutôt que de lancer un téléchargement d'un gigaoctet dans le dos de quelqu'un.
 
@@ -64,7 +67,7 @@ vérifie en une commande, avec le travail d'essai que porte le dépôt :
 
 ```bash
 cd docker/test-job
-docker run --rm -v "$PWD:/job" ghcr.io/gpasa/treelevel-tools:0.3.0 run /job && cat status.json
+docker run --rm -v "$PWD:/job" ghcr.io/gpasa/treelevel-tools:0.4.0 run /job && cat status.json
 ```
 
 Attendu : `state` à `finished`, `eventsWritten` à 200, `crossSection` toujours 3.11399 — le générateur gerbe et
@@ -87,7 +90,7 @@ Distribuer ces binaires oblige à publier les sources correspondantes. Elles le 
 3. le moteur lui-même est dans ce dépôt, sous GPL v3.
 
 ```bash
-docker run --rm --entrypoint cat ghcr.io/gpasa/treelevel-tools:0.3.0 \
+docker run --rm --entrypoint cat ghcr.io/gpasa/treelevel-tools:0.4.0 \
   /opt/treelevel-tools/share/treelevel-tools/SOURCES.txt
 ```
 
@@ -136,7 +139,7 @@ radiatives resserreraient. Mais qui compare sans le savoir croira à une erreur 
 ## Sous Linux : lancez le conteneur sous votre identité
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/job" ghcr.io/gpasa/treelevel-tools:0.3.0 run /job
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/job" ghcr.io/gpasa/treelevel-tools:0.4.0 run /job
 ```
 
 Sans `--user`, le conteneur écrit en **root** dans le dossier monté, et vous ne pouvez plus effacer ce qui en
