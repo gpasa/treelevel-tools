@@ -113,7 +113,9 @@ public:
     auto position = [](const Pythia8::Vec4& v) {
       if (v.px() == 0 && v.py() == 0 && v.pz() == 0 && v.e() == 0) return std::string();
       // Pythia : vProd() en mm, temps en mm/c ; HepMC : @ x y z t, dans la même unité (U GEV MM).
-      return " @ " + number_(v.px()) + " " + number_(v.py()) + " " + number_(v.pz()) + " " + number_(v.e());
+      // Seize chiffres : un vertex à un demi-millimètre du centre reste juste au femtomètre près.
+      auto fine = [](double x) { char b[40]; snprintf(b, sizeof b, "%.15e", x); return std::string(b); };
+      return " @ " + fine(v.px()) + " " + fine(v.py()) + " " + fine(v.pz()) + " " + fine(v.e());
     };
     for (int i = 1; i < event.size(); ++i) {
       const Pythia8::Particle& p = event[i];
