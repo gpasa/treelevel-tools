@@ -166,7 +166,10 @@ Aucune des deux ne sert d'office : par défaut, seuls les générateurs livrés 
 même document donne le même résultat sur deux machines.
 
 Signé et notarisé par Apple. Sommes de contrôle dans \`SHA256SUMS.txt\`.
+
 NOTES
+# Les générateurs, leurs auteurs, leurs sites et ce qu'il faut citer : la même page que le dépôt (CREDITS.md).
+sed 's/^# /## /' CREDITS.md >> "$OUT/release-notes.md"
 say "Prêt"
 ls -lh "$OUT" | sed 's/^/  /'
 
