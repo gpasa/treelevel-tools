@@ -188,7 +188,7 @@ private:
 int main(int argc, char* argv[]) {
   std::string config, out, jobPath, part;
   int seedOffset = 0;
-  bool printCard = false;
+  bool printCard = false, plan = false;
   for (int i = 1; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--version") { std::cout << PYTHIA_VERSION << std::endl; return 0; }
@@ -200,6 +200,7 @@ int main(int argc, char* argv[]) {
     else if (a == "--part" && i + 1 < argc) part = argv[++i];
     else if (a == "--seed-offset" && i + 1 < argc) seedOffset = std::atoi(argv[++i]);
     else if (a == "--print-card") printCard = true;             // la carte, sans rien lancer
+    else if (a == "--plan") plan = true;                         // ce qu'il faut lancer, sans rien lancer
   }
   if (!jobPath.empty()) {
     std::ifstream in(jobPath, std::ios::binary);
@@ -212,6 +213,18 @@ int main(int argc, char* argv[]) {
       return 3;
     }
     if (printCard) { std::cout << cardText; return 0; }
+    // Pour un hôte qui ne passe pas par le moteur C++ — le module WebAssembly de l'iPad — : les parties à tirer
+    // (une machine entre deux leptons, « tout », se tire en deux : les faisceaux, puis leur flux de photons, réunis
+    // ensuite) et l'objection du travail, décidées ici comme le moteur les décide.
+    if (plan) {
+      const jobcard::Process p = jobcard::expanded(jobcard::readProcess(job["hardProcess"]));
+      const bool mixed = p.collider && p.mix && p.has("photoproduction") && p.channels.size() > 1;
+      std::string objection = jobcard::objection(p), quoted;
+      for (char c : objection) { if (c == '"' || c == '\\') quoted += '\\'; quoted += c; }
+      std::cout << "{\"parts\":" << (mixed ? "[\"beams\",\"photons\"]" : "[\"\"]")
+                << ",\"objection\":\"" << quoted << "\"}" << std::endl;
+      return 0;
+    }
     const size_t cut = jobPath.find_last_of("\\/");
     const std::string folder = cut == std::string::npos ? "" : jobPath.substr(0, cut + 1);
     config = folder + (part.empty() ? "pythia.cmnd" : "pythia." + part + ".cmnd");
