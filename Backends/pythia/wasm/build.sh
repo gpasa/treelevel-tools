@@ -38,9 +38,19 @@ case "$CIBLE" in
       -sNODERAWFS=1 -sEXIT_RUNTIME=1 -sENVIRONMENT=node --pre-js "$ICI/node-env.js"
     echo "→ $SORTIE/treelevel-pythia.js (+ .wasm), à lancer par node" ;;
   web)
-    em++ $COMMUN "$ICI/../main.cpp" "$LIB" -o "$SORTIE/treelevel-pythia-web.js" \
-      -sMODULARIZE=1 -sEXPORT_NAME=TreeLevelPythia -sENVIRONMENT=web -sINVOKE_RUN=0 -sEXIT_RUNTIME=1 \
-      -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=FS,callMain
-    echo "→ $SORTIE/treelevel-pythia-web.js (+ .wasm)" ;;
+    # Le module de l'iPad : une instance par travail, les fichiers en mémoire, les données en deux paquets.
+    WEB="$SORTIE/web"; mkdir -p "$WEB"
+    em++ $COMMUN "$ICI/../main.cpp" "$LIB" -o "$WEB/treelevel-pythia-web.js" \
+      -sMODULARIZE=1 -sEXPORT_NAME=TreeLevelPythia -sENVIRONMENT=web,worker -sINVOKE_RUN=0 -sEXIT_RUNTIME=1 \
+      -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=FS,callMain,ENV
+    DATA=$(dirname "$PYTHIA")/$(basename "$PYTHIA")/share/Pythia8
+    python3 "$ICI/pack.py" "$WEB/leptons.pack" "$DATA/xmldoc@/pythia/xmldoc" "$DATA/tunes@/pythia/tunes" \
+      "$DATA/setups@/pythia/setups"
+    python3 "$ICI/pack.py" "$WEB/pdfdata.pack" "$DATA/pdfdata@/pythia/pdfdata"
+    cp "$ICI/runner.js" "$ICI/test.html" "$WEB/"
+    mkdir -p "$WEB/jobs"; cp -R "$ICI/../../../docker/test-job" "$ICI/../../../docker/test-job-machine" "$WEB/jobs/"
+    ls -la "$WEB"/*.wasm "$WEB"/*.pack | awk '{print "  " $5 " octets  " $9}'
+    echo "→ $WEB" ;;
 esac
-ls -la "$SORTIE"/*.wasm | awk '{print "  " $5 " octets  " $9}'
+[ "$CIBLE" = node ] && ls -la "$SORTIE"/*.wasm | awk '{print "  " $5 " octets  " $9}'
+true

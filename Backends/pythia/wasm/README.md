@@ -23,12 +23,17 @@ Prérequis hors dépôt : Emscripten dans `~/Library/TreeLevelMC/tools/emsdk` (e
 - Données : xmldoc 3,7 Mo, tunes 0,2 Mo, setups 1,6 Mo pour les leptons ; pdfdata 53 Mo en plus pour les
   hadrons. Depuis 8.31x, Monash des leptons se lit dans `tunes/` : ne pas l'oublier dans le paquet.
 
+- **Cible web faite** : `build.sh web` → `build/web` (module, `leptons.pack` 5,3 Mo, `pdfdata.pack` 55 Mo,
+  `runner.js`, `test.html`). `runner.js` monte les paquets en mémoire, pose `job.json` et les fichiers du travail,
+  lance le pilote, rend le HepMC3 ; une instance par travail. Dans un navigateur (Chromium, Mac M) :
+  machine e⁻e⁺ 10 000 év. 1078 pb en 0,74 s ; habillage e⁺e⁻ → b b̄ 3,114 pb ; **jets au LHC 13 TeV**
+  (MPI, hadronisation, ~1 400 particules/év.) 1 000 év. 0,707 mb en 9,7 s contre 4,4 s en natif, σ identique.
+  Aperçu local : lien `~/Sites/home/www/apps/pythia-wasm` → `build/web`.
+
 ## À faire
 
-1. Cible « web » : monter les données dans le système de fichiers d'Emscripten sous `/pythia`, passer
-   `job.json`, récupérer `events.hepmc` et `status`.
-2. TreeLevel iPad : une vue web invisible (WKWebView) qui charge le module depuis Application Support, un
+1. TreeLevel iPad : une vue web invisible (WKWebView) qui charge le module depuis Application Support, un
    gestionnaire de schéma d'URL pour lui servir les fichiers, la même interface que le moteur du Mac.
-3. Réglages de l'iPad : « Module Pythia », téléchargement depuis la release, empreinte fixée dans l'app.
-4. Release GitHub du module (WebAssembly, données, sources, licence).
-5. Mesurer sur un iPad réel (simulateur puis appareil), et expliquer le module dans les notes de revue.
+2. Réglages de l'iPad : « Module Pythia », téléchargement depuis la release, empreinte fixée dans l'app.
+3. Release GitHub du module (WebAssembly, données, sources, licence).
+4. Mesurer sur un iPad réel (simulateur puis appareil), et expliquer le module dans les notes de revue.
