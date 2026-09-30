@@ -285,6 +285,7 @@ partagé avec TreeLevel, est sous licence MIT (voir son en-tête) pour que les d
 
 ## Windows
 
-Le port Windows est dans [`win/`](win/) : le moteur en C#, le module Pythia 8 construit avec MSVC (`win/backends/pythia`),
-Herwig et Sherpa dans WSL. Le protocole est le même : un dossier de travail écrit sur un Mac se relit sur
+Le port Windows est dans [`win/`](win/) : un hôte en C#, le moteur C++ commun (`Backends/engine`) compilé avec
+MSVC, le module Pythia 8 construit de même (`win/backends/pythia`) ; Herwig, Sherpa, WHIZARD et CalcHEP par l'image
+Docker. Le protocole est le même : un dossier de travail écrit sur un Mac se relit sur
 Windows et inversement. Voir [`win/README.md`](win/README.md).

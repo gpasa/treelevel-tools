@@ -5,37 +5,54 @@ et réécrit les événements en HepMC3. Le protocole est identique au bit près
 relit ici et inversement.
 
 ```
-treelevel-tools run <dossier>            exécute job.json, produit events.hepmc, tient status.json à jour
-treelevel-tools capabilities [--out f]   les générateurs installés, en JSON
+treelevel-tools run <dossier> [--docker]            exécute job.json, produit events.hepmc, tient status.json à jour
+treelevel-tools capabilities [--out f] [--docker]   les générateurs installés, en JSON
+treelevel-tools serve <dossier> [--docker]          reste à l'écoute d'un dossier de travaux partagé
 treelevel-tools version
 ```
 
+`--docker` est la case des Réglages de TreeLevel « Tout faire tourner dans l'image Docker » : tout passe alors
+par l'image, et rien n'est proposé quand Docker ou l'image manque — jamais de repli silencieux sur le natif, qui
+ne porte pas les mêmes constructions.
+
 ## Ce qui tourne, et comment
+
+Trois pièces, comme sur le Mac :
+
+| Pièce | Rôle |
+|---|---|
+| `treelevel-tools.exe` (C#, `treelevel-tools/`) | l'hôte que TreeLevel lance : trouve Docker et l'image, le module Pythia, écrit `launch.json` |
+| `treelevel-engine.exe` (C++, `engine/`) | le moteur : **le même source** que celui de l'image et du Mac (`Backends/engine/engine.cpp`) ; il écrit la carte de chaque générateur et le mène |
+| `Modules\pythia8\` (`backends/pythia/`) | le pilote Pythia partagé (`Backends/pythia/main.cpp`), qui écrit lui-même sa carte |
 
 | Générateur | Sur Windows |
 |---|---|
-| Sans gerbe (`passthrough`) | intégré au moteur, rien à installer |
-| Pythia 8 | natif, MSVC — `backends/pythia` construit le pilote et son module |
-| Herwig 7 | dans le conteneur : aucune version Windows n'existe |
-| Sherpa 3 | dans le conteneur, pour la même raison |
-| WHIZARD, CalcHEP | pas encore portés |
+| Sans gerbe (`passthrough`) | natif, dans le moteur C++ |
+| Pythia 8 | natif, MSVC ; dans l'image avec `--docker` |
+| Herwig 7, Sherpa 3, WHIZARD 3, CalcHEP 3 | dans l'image : aucun n'a de version Windows |
 
-Pythia, Herwig et Sherpa sont sous **GPL** : ce dépôt est GPL v3, et aucun de leurs fichiers n'y est recopié.
-Vous construisez Pythia avec le script ci-dessous ; Herwig et Sherpa arrivent construits dans l'image, dont la
-recette et les sources sont publiées avec elle.
+Pythia, Herwig, Sherpa, WHIZARD et CalcHEP sont sous **GPL** : ce dépôt est GPL v3, et aucun de leurs fichiers
+n'y est recopié. Vous construisez Pythia avec le script ci-dessous ; les autres arrivent construits dans
+l'image, dont la recette et les sources sont publiées avec elle. Leurs auteurs et licences : [`CREDITS.md`](../CREDITS.md).
 
-## Construire le moteur
+## Construire
 
-.NET 8 suffit ; il n'y a aucune dépendance.
+.NET 8 et Visual Studio (charge « Développement Desktop en C++ ») suffisent.
 
 ```powershell
 cd win\treelevel-tools
-dotnet publish -c Release -r win-arm64   # ou win-x64
+dotnet publish -c Release -r win-arm64   # ou win-x64 : l'hôte, un seul exécutable
+..\engine\build.ps1                      # le moteur C++, pour l'architecture de la machine
 ```
 
-Le résultat est un seul exécutable, `treelevel-tools.exe`. TreeLevel le cherche à côté de lui, dans
-`%LOCALAPPDATA%\Programs\TreeLevel Tools`, dans `%ProgramFiles%\TreeLevel Tools`, dans votre dossier
-personnel, puis dans le PATH.
+`package\release.ps1` fait les trois pièces et l'archive d'un coup. Le moteur C++ doit être **à côté** de
+`treelevel-tools.exe`. TreeLevel cherche l'hôte à côté de lui, dans `%LOCALAPPDATA%\Programs\TreeLevel Tools`,
+dans `%ProgramFiles%\TreeLevel Tools`, dans votre dossier personnel, puis dans le PATH.
+
+Le moteur C++ ne diffère sous Windows que par sa plomberie, derrière `_WIN32` : `CreateProcess` au lieu de
+`fork`/`exec`, et un remplacement de `status.json` qui marche quand la cible existe (`MoveFileEx`). Un manifeste
+(`engine/utf8.manifest`, repris par le pilote Pythia) fait de l'UTF-8 la page de code de tous les appels : un
+dossier de travail sous un nom d'utilisateur accentué s'ouvre comme un autre.
 
 > TreeLevel est empaqueté en MSIX, et un paquet MSIX détourne les écritures dans `%LOCALAPPDATA%` vers son
 > propre conteneur : un programme extérieur ne verrait pas ce qu'il y écrit. Les dossiers de travail sont donc
@@ -71,64 +88,49 @@ Les 107 unités de compilation de Pythia prennent quelques minutes la première 
 treelevel-tools capabilities     # pythia8 doit apparaître, avec sa version
 ```
 
-## Herwig 7 et Sherpa 3 : le conteneur
+## Herwig, Sherpa, WHIZARD, CalcHEP : l'image
 
-Aucun des deux n'a de version Windows, et ce n'est pas une affaire de drapeaux de compilation : Sherpa charge
-ses modules avec `dlopen` et s'appuie sur `sys/resource.h`, Herwig repose sur le dépôt de classes chargées à
-l'exécution de ThePEG, sur autotools et sur du Fortran. Les porter, ce serait maintenir un fork de code GPL
-amont. Ils tournent donc dans un conteneur Linux, que l'utilisateur récupère d'une commande :
+Aucun n'a de version Windows, et ce n'est pas une affaire de drapeaux de compilation : Sherpa charge ses modules
+avec `dlopen` et s'appuie sur `sys/resource.h`, Herwig repose sur le dépôt de classes chargées à l'exécution de
+ThePEG, sur autotools et sur du Fortran ; WHIZARD et CalcHEP compilent chaque processus. Ils tournent donc dans
+un conteneur Linux, que l'utilisateur récupère d'une commande :
 
 ```powershell
-docker pull ghcr.io/gpasa/treelevel-tools:0.3.0
+docker pull ghcr.io/gpasa/treelevel-tools:0.4.0
 ```
 
-Le moteur qui tourne dans l'image est **le même programme** que celui de Windows, compilé pour Linux : il lit
-le même `job.json` et écrit le même `status.json`. Le dossier de travail est monté tel quel, donc rien n'est
-copié ni converti — voir [`docker/README.md`](../docker/README.md) pour ce que l'image contient et d'où
+Le moteur qui tourne dans l'image est **le même source** que `treelevel-engine.exe`, compilé pour Linux : il
+lit le même `job.json` et écrit le même `status.json`. Le dossier de travail est monté tel quel, donc rien
+n'est copié ni converti — voir [`docker/README.md`](../docker/README.md) pour ce que l'image contient et d'où
 viennent ses sources.
 
-Côté Windows, le moteur s'en occupe seul : il vérifie que le démon Docker répond, que l'image est **déjà**
-présente (`docker image inspect` — rien n'est jamais téléchargé sans qu'on le demande), puis lance
+L'hôte vérifie que le démon Docker répond, que l'image est **déjà** présente (`docker image inspect`, l'étiquette
+du protocole puis `latest` — rien n'est jamais téléchargé sans qu'on le demande), puis lance
 
 ```
 docker run --rm -v "<dossier de travail>:/job" <image> run /job
 ```
 
-et laisse le conteneur écrire lui-même sa progression. Si Docker n'est pas là, les deux générateurs ne sont pas
-proposés, et un travail qui les demande échoue tout de suite avec la raison.
+et laisse le conteneur écrire lui-même sa progression. Si Docker n'est pas là, ces générateurs ne sont pas
+proposés, et un travail qui les demande échoue tout de suite avec la raison. Les versions venues de l'image
+portent « (Docker) », dans les capacités comme dans le statut d'un travail fini.
 
 > **Machines virtuelles.** Docker Desktop fait tourner son moteur dans WSL2, c'est-à-dire dans une machine
 > virtuelle Hyper-V. Sur un PC réel la virtualisation est active d'origine ; dans un invité Windows, il faut
 > que l'hôte expose la **virtualisation imbriquée** — sur un Mac, une puce M3 ou M4 avec Parallels 19+.
 > Sans elle, Docker s'installe mais son moteur ne démarre pas. Pythia, lui, tourne partout.
 
-### Le repli : WSL à la main
-
-Pour qui a déjà construit Herwig ou Sherpa dans sa distribution, le moteur les y trouve encore. Il interroge
-`Herwig --version` et `Sherpa --version` à chaque appel de `capabilities`, et une installation cassée disparaît
-de la liste au lieu d'échouer au milieu d'un travail.
-
-```bash
-# dans Ubuntu ; les contournements imposés par macOS (gcc plutôt que clang, _Static_assert, -fno-range-check)
-# n'ont pas lieu d'être ici, gcc est le compilateur du système
-sudo apt install -y build-essential gfortran autoconf automake libtool python3-dev zlib1g-dev libboost-dev libgsl-dev
-wget https://herwig.hepforge.org/downloads/herwig-bootstrap && chmod +x herwig-bootstrap
-./herwig-bootstrap --lite -j $(nproc) ~/herwig7        # une à deux heures
-echo 'source ~/herwig7/bin/activate' >> ~/.bashrc
-```
-
-Le moteur lance ses commandes avec `bash -lc`, donc le `PATH` que cette ligne pose est celui qu'il voit. C'est
-exactement la recette de l'image, en plus long — d'où l'image.
-
 ## Différences avec macOS
 
 * Les chemins du support sont `%LOCALAPPDATA%\TreeLevel Tools\` au lieu de
   `~/Library/Application Support/TreeLevel Tools/`.
-* Le moteur est écrit en C# plutôt qu'en Swift ; le protocole, lui, est le même fichier de part et d'autre
+* L'hôte est écrit en C# plutôt qu'en Swift ; le protocole, lui, est le même fichier de part et d'autre
   (`MCEngineProtocol.cs` ↔ `Protocol/MCEngineProtocol.swift`), y compris la forme exacte du JSON que
   `Codable` produit : clés en camel, énumérations en minuscules, dates en secondes depuis le 1er janvier 2001.
-* Herwig et Sherpa tournent dans un conteneur Linux au lieu de tourner nativement ; c'est le même moteur
-  qui s'exécute dedans, compilé pour Linux.
+* Seuls Pythia et le passage sans gerbe tournent en natif ; le reste passe par l'image, là où le Mac a aussi
+  ses modules natifs.
+* Le choix de l'image se fait dans les Réglages de TreeLevel (passé en `--docker`), et non dans une fenêtre du
+  moteur, que Windows n'a pas.
 
 ## Mesuré
 

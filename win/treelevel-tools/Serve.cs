@@ -6,8 +6,8 @@ namespace TreeLevel.MC;
 /// job folder in, the engine takes it, runs it and writes the answers back where they were expected. Nothing
 /// listens on a port and nothing leaves the machine — a job is still a folder, as everywhere else here.
 ///
-/// In the container it needs no special arrangement, the entry point being the engine itself:
-///   docker run -d -v /srv/mcjobs:/jobs ghcr.io/gpasa/treelevel-tools:0.3.0 serve /jobs
+/// Left running on the shared folder:
+///   treelevel-tools serve D:\mcjobs [--docker]
 /// </summary>
 public static class Serve
 {
@@ -34,7 +34,7 @@ public static class Serve
     static void Say(string message)
         => Console.WriteLine(DateTime.Now.ToString("HH:mm:ss", CultureInfo.InvariantCulture) + "  " + message);
 
-    public static int Run(string root, string engineVersion, double seconds)
+    public static int Run(string root, string engineVersion, double seconds, bool dockerOnly)
     {
         if (!Directory.Exists(root)) { Console.Error.WriteLine($"treelevel-tools: no folder {root}"); return 1; }
         var delay = TimeSpan.FromSeconds(Math.Clamp(seconds, 0.2, 3600));
@@ -49,8 +49,8 @@ public static class Serve
             Say("arrêt demandé — le travail en cours va jusqu'au bout");
         };
 
-        Installation.PublishCapabilities(engineVersion);
-        var caps = Installation.Capabilities(engineVersion);
+        var caps = Installation.Capabilities(engineVersion, dockerOnly);
+        Installation.PublishCapabilities(caps);
         Say($"à l'écoute de {Path.GetFullPath(root)} — {string.Join(", ", caps.Generators.Select(MCJob.Label))}");
 
         while (!stopping)
@@ -79,7 +79,7 @@ public static class Serve
                 Say($"n° {number}  {job.Id}  {MCJob.Label(job.UseGenerator)}, {job.Events} événements");
                 try
                 {
-                    new Runner(folder, job, engineVersion, number).Run();
+                    new Runner(folder, job, number, dockerOnly).Run();
                     var status = folder.ReadStatus();
                     Say(status?.JobState == MCStatus.State.Finished
                         ? $"n° {number}  terminé, {status.EventsWritten} événements"

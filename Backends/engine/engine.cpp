@@ -18,6 +18,10 @@
 //
 // Build:  g++ -O2 -std=c++17 -I Backends/pythia Backends/engine/engine.cpp -o treelevel-tools   (image)
 //         clang++ … -o treelevel-engine, beside the Swift host in TreeLevel Tools.app (Mac)
+//         win/engine (CMake, MSVC) → treelevel-engine.exe, beside the C# host (Windows)
+//
+// Windows runs Pythia and the passthrough only — the other generators live in the image — so what differs there
+// is the plumbing alone, behind _WIN32: CreateProcess for fork/exec, and a rename that replaces status.json.
 //
 // Copyright (C) 2026 Guglielmo Pasa. GNU General Public License v3 or later.
 
@@ -37,11 +41,22 @@
 #include <sstream>
 #include <string>
 #include <vector>
-#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#ifdef _WIN32
+#include <thread>
+#include <windows.h>
+#ifndef S_ISREG
+#define S_ISREG(m) (((m) & S_IFMT) == S_IFREG)
+#endif
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & S_IFMT) == S_IFDIR)
+#endif
+#else
+#include <fcntl.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#endif
 
 #include "JobCard.h"
 
@@ -69,10 +84,29 @@ std::string readFile(const std::string& path) {
   return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
+/// Replaces `to` by `from` in one step, so that a reader never sees half a file.
+bool replaceFile(const std::string& from, const std::string& to) {
+#ifdef _WIN32
+  // rename() refuses an existing target on Windows, and a reader holding status.json open without sharing its
+  // deletion makes the replacement fail for a moment: a few tries, then the file is written in place.
+  for (int attempt = 0; attempt < 20; ++attempt) {
+    if (MoveFileExA(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING)) return true;
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  return false;
+#else
+  return std::rename(from.c_str(), to.c_str()) == 0;
+#endif
+}
+
 bool writeFile(const std::string& path, const std::string& text) {
   const std::string tmp = path + ".tmp";
   { std::ofstream out(tmp, std::ios::binary); out << text; if (!out) return false; }
-  return std::rename(tmp.c_str(), path.c_str()) == 0;
+  if (replaceFile(tmp, path)) return true;
+  std::remove(tmp.c_str());
+  std::ofstream out(path, std::ios::binary | std::ios::trunc);
+  out << text;
+  return bool(out);
 }
 
 std::string join(const std::string& a, const std::string& b) { return a.empty() || a.back() == '/' ? a + b : a + "/" + b; }
@@ -159,6 +193,83 @@ std::string jsonString(const std::string& s) {
 
 /// Runs `argv` in `cwd`, standard output and error together, handing each line to `onLine`. Returns the exit
 /// code (128 + signal when it was killed, -1 when it could not start).
+#ifdef _WIN32
+/// One argument as CommandLineToArgvW and the C runtime read it back: quoted when needed, the backslashes before
+/// a quote doubled.
+std::string windowsArgument(const std::string& a) {
+  if (!a.empty() && a.find_first_of(" \t\n\v\"") == std::string::npos) return a;
+  std::string out = "\"";
+  size_t slashes = 0;
+  for (char c : a) {
+    if (c == '\\') { ++slashes; continue; }
+    if (c == '"') out.append(slashes * 2 + 1, '\\');
+    else out.append(slashes, '\\');
+    slashes = 0;
+    out += c;
+  }
+  out.append(slashes * 2, '\\');
+  return out + "\"";
+}
+
+int runProcess(const std::vector<std::string>& argv, const std::string& cwd, const std::map<std::string, std::string>& env,
+               const std::function<void(const std::string&)>& onLine) {
+  if (argv.empty()) return -1;
+  SECURITY_ATTRIBUTES inherit{sizeof(SECURITY_ATTRIBUTES), nullptr, TRUE};
+  HANDLE readEnd = nullptr, writeEnd = nullptr;
+  if (!CreatePipe(&readEnd, &writeEnd, &inherit, 0)) return -1;
+  SetHandleInformation(readEnd, HANDLE_FLAG_INHERIT, 0);
+  // The child inherits this process's environment: the additions are set here for the time of the launch, then
+  // put back, rather than rebuilding a whole environment block by hand.
+  std::vector<std::pair<std::string, std::optional<std::string>>> saved;
+  for (const auto& kv : env) {
+    const DWORD n = GetEnvironmentVariableA(kv.first.c_str(), nullptr, 0);
+    std::optional<std::string> before;
+    if (n > 0) { std::string v(n, '\0'); v.resize(GetEnvironmentVariableA(kv.first.c_str(), v.data(), n)); before = v; }
+    saved.emplace_back(kv.first, before);
+    SetEnvironmentVariableA(kv.first.c_str(), kv.second.c_str());
+  }
+  std::string commandLine;
+  for (const auto& a : argv) commandLine += (commandLine.empty() ? "" : " ") + windowsArgument(a);
+  STARTUPINFOA startup{};
+  startup.cb = sizeof startup;
+  startup.dwFlags = STARTF_USESTDHANDLES;
+  startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+  startup.hStdOutput = writeEnd;
+  startup.hStdError = writeEnd;
+  PROCESS_INFORMATION child{};
+  const BOOL started = CreateProcessA(nullptr, commandLine.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr,
+                                      cwd.empty() ? nullptr : cwd.c_str(), &startup, &child);
+  const DWORD error = GetLastError();
+  for (const auto& s : saved) SetEnvironmentVariableA(s.first.c_str(), s.second ? s.second->c_str() : nullptr);
+  CloseHandle(writeEnd);
+  if (!started) {
+    CloseHandle(readEnd);
+    onLine("cannot start " + argv[0] + ": error " + std::to_string(error));
+    return 127;
+  }
+  CloseHandle(child.hThread);
+  std::string pending;
+  char buffer[8192];
+  DWORD n = 0;
+  while (ReadFile(readEnd, buffer, sizeof buffer, &n, nullptr) && n > 0) {
+    pending.append(buffer, size_t(n));
+    size_t cut;
+    while ((cut = pending.find('\n')) != std::string::npos) {
+      std::string line = pending.substr(0, cut);
+      if (!line.empty() && line.back() == '\r') line.pop_back();
+      onLine(line);
+      pending.erase(0, cut + 1);
+    }
+  }
+  if (!pending.empty()) onLine(pending);
+  CloseHandle(readEnd);
+  WaitForSingleObject(child.hProcess, INFINITE);
+  DWORD code = 0;
+  const bool known = GetExitCodeProcess(child.hProcess, &code);
+  CloseHandle(child.hProcess);
+  return known ? int(code) : -1;
+}
+#else
 int runProcess(const std::vector<std::string>& argv, const std::string& cwd, const std::map<std::string, std::string>& env,
                const std::function<void(const std::string&)>& onLine) {
   int fds[2];
@@ -199,6 +310,7 @@ int runProcess(const std::vector<std::string>& argv, const std::string& cwd, con
   if (WIFSIGNALED(status)) return 128 + WTERMSIG(status);
   return -1;
 }
+#endif
 
 /// The whole output of a short command, and its exit code.
 std::pair<int, std::string> capture(const std::vector<std::string>& argv) {
@@ -1028,7 +1140,7 @@ int main(int argc, char* argv[]) {
         }
       }
     }
-    if (folder.size() > 1 && folder.back() == '/') folder.pop_back();
+    if (folder.size() > 1 && (folder.back() == '/' || folder.back() == '\\')) folder.pop_back();
     const std::string text = readFile(join(folder, "job.json"));
     Value job;
     std::string error;

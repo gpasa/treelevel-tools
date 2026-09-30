@@ -61,7 +61,8 @@ if(MSVC)
   target_compile_options(pythia8 PRIVATE /MP)
 endif()
 
-add_executable(treelevel-pythia "${DRIVER}")
+# ../../engine/utf8.manifest: UTF-8 as the code page of PYTHIA8DATA and of every path, as for the engine.
+add_executable(treelevel-pythia "${DRIVER}" "${CMAKE_CURRENT_SOURCE_DIR}/../../engine/utf8.manifest")
 target_link_libraries(treelevel-pythia PRIVATE pythia8)
 
 install(TARGETS treelevel-pythia RUNTIME DESTINATION .)

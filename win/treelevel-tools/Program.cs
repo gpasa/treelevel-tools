@@ -1,20 +1,21 @@
 using System.Text.Json;
 using TreeLevel.MC;
 
-// TreeLevel Tools (Windows) — runs a parton shower and hadronisation on the parton-level events of a
-// TreeLevel job. The same protocol and the same commands as the macOS engine.
+// TreeLevel Tools (Windows) — runs a parton shower and hadronisation on the parton-level events of a TreeLevel
+// job, or a generator on the process it describes. The same protocol and the same commands as the macOS engine.
 //
-//   treelevel-tools run <job folder>              read job.json, produce events.hepmc, keep status.json up to date
-//   treelevel-tools capabilities [--out file]     what this installation can do, as JSON
+//   treelevel-tools run <job folder> [--docker]            read job.json, produce events.hepmc, keep status.json current
+//   treelevel-tools capabilities [--out file] [--docker]   what this installation can do, as JSON
+//   treelevel-tools serve <folder> [--every s] [--docker]  stay up, run every job folder that turns up inside it
 //   treelevel-tools version
 //
-// The generators are separate programs: the Pythia driver built by win/backends/pythia (treelevel-pythia.exe),
-// and Herwig and Sherpa inside WSL. Nothing here links against them.
+// This program is the host: it finds Docker and the image, writes launch.json, and runs either the C++ engine
+// beside it (treelevel-engine.exe, for Pythia and the passthrough) or the image. --docker is TreeLevel's setting
+// « everything in the Docker image ». Nothing here links against a generator.
 //
 // Copyright (C) 2026 Guglielmo Pasa. GNU General Public License v3 or later.
 
-// La version vient du projet, et de nulle part ailleurs : la CI la lit dans le .csproj pour étiqueter
-// l'image, le moteur y cherche l'image correspondante, et un numéro écrit deux fois finit par différer.
+// La version vient du projet, et de nulle part ailleurs : un numéro écrit deux fois finit par différer.
 var assemblee = typeof(Installation).Assembly.GetName().Version;
 string EngineVersion = assemblee is null ? "0" : $"{assemblee.Major}.{assemblee.Minor}.{assemblee.Build}";
 
@@ -23,13 +24,17 @@ if (args.Length == 0)
 {
     Console.WriteLine("""
     usage: treelevel-tools <command>
-      run <job folder>            run the job written by TreeLevel (job.json, events.lhe)
-      serve <folder> [--every s]  stay up, run every job folder that turns up inside it
-      capabilities [--out file]   list the generators this installation can run, as JSON
+      run <job folder> [--docker]            run the job written by TreeLevel (job.json, events.lhe)
+      capabilities [--out file] [--docker]   list the generators this installation can run, as JSON
+      serve <folder> [--every s] [--docker]  stay up, run every job folder that turns up inside it
       version
+
+      --docker   everything in the Docker image, and nothing when it is missing
     """);
     return 2;
 }
+
+bool dockerOnly = args.Contains("--docker");
 
 switch (args[0])
 {
@@ -39,13 +44,12 @@ switch (args[0])
 
     case "capabilities":
     {
-        var caps = Installation.Capabilities(EngineVersion);
+        var caps = Installation.Capabilities(EngineVersion, dockerOnly);
         string json = JsonSerializer.Serialize(caps, MCEngineProtocol.JsonOptions);
         int k = Array.IndexOf(args, "--out");
         if (k >= 0 && k + 1 < args.Length) File.WriteAllText(args[k + 1], json, MCEngineProtocol.Utf8);
         else Console.WriteLine(json);
-        // Publish it too, so that TreeLevel can read it without launching anything.
-        Installation.PublishCapabilities(EngineVersion);
+        Installation.PublishCapabilities(caps);
         return 0;
     }
 
@@ -64,8 +68,7 @@ switch (args[0])
             });
             return Fail($"job protocol {job.ProtocolVersion} is newer than this engine ({MCEngineProtocol.Version})");
         }
-        Installation.PublishCapabilities(EngineVersion);
-        var runner = new Runner(folder, job, EngineVersion, Installation.NextJobNumber());
+        var runner = new Runner(folder, job, Installation.NextJobNumber(), dockerOnly);
         return runner.Run() ? 0 : 1;
     }
 
@@ -76,7 +79,7 @@ switch (args[0])
         int k = Array.IndexOf(args, "--every");
         if (k >= 0 && k + 1 < args.Length) double.TryParse(args[k + 1], System.Globalization.NumberStyles.Float,
                                                            System.Globalization.CultureInfo.InvariantCulture, out every);
-        return Serve.Run(args[1], EngineVersion, every);
+        return Serve.Run(args[1], EngineVersion, every, dockerOnly);
     }
 
     default:
