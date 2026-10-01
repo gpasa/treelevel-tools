@@ -1,0 +1,25 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pythia WebAssembly</title>
+<style>body{font:14px -apple-system,sans-serif;margin:24px}pre{background:#f4f4f4;padding:10px;white-space:pre-wrap}</style>
+<h1>Pythia 8 — WebAssembly</h1>
+<p><button id="machine">Machine e⁻e⁺ 200 GeV (10 000 év.)</button> <button id="habille">e⁺e⁻ → b b̄ habillé (200 év.)</button></p>
+<pre id="out">prêt</pre>
+<script src="treelevel-pythia-web.js"></script>
+<script src="runner.js"></script>
+<script>
+const out = document.getElementById("out");
+async function essai(dossier, events, avecLHE) {
+  out.textContent = "en cours…";
+  const job = JSON.parse(await (await fetch("jobs/" + dossier + "/job.json")).text());
+  if (events) job.events = events;
+  const files = avecLHE ? { "events.lhe": await (await fetch("jobs/" + dossier + "/events.lhe")).text() } : {};
+  const r = await TreeLevelPythiaRunner.run({ job: JSON.stringify(job), files, part: "beams", seedOffset: 0 });
+  const written = (r.stdout.match(/written .*/) || ["—"])[0];
+  const n = r.hepmc ? (r.hepmc.match(/^E /gm) || []).length : 0;
+  window.dernier = { code: r.code, written, n, seconds: r.seconds };
+  out.textContent = `code ${r.code}\n${written}\n${n} événements HepMC3, ${(r.hepmc || "").length / 1e6} Mo\n${r.seconds.toFixed(2)} s\n\n` + r.stderr.slice(-800);
+}
+document.getElementById("machine").onclick = () => essai("test-job-machine", 10000, false);
+document.getElementById("habille").onclick = () => essai("test-job", 0, true);
+</script>

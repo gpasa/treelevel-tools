@@ -79,9 +79,13 @@ take() {                      # copie une bibliothèque dans vendor, une seule f
 
 collect() {
   local file=$1 dep base found
-  for dep in $(otool -L "$file" 2>/dev/null | tail -n +2 | awk '{print $1}'); do
+  for dep in $(deps "$file"); do
     case "$dep" in
       /usr/lib/*|/System/*) ;;                     # fournies par le système, elles restent dehors
+      # Notre propre arbre : déjà là, fix() en fera un chemin relatif. Le prendre aussi dans vendor en ferait
+      # une seconde copie — deux libThePEG et deux jeux de greffons chargés ensemble, et Herwig qui ne
+      # retrouve plus ses classes en relisant son dépôt (« Matcher<ChargedLepton> »).
+      "$PREFIX"/*) ;;
       /*) take "$dep" ;;                           # tout autre chemin absolu manquera chez l'utilisateur
       @rpath/*)
         # Une dépendance @rpath que l'arbre ne contient pas se résolvait par un rpath de construction :
@@ -129,17 +133,17 @@ fix() {
       esac
     }
   done
-  for dep in $(otool -L "$file" 2>/dev/null | tail -n +2 | awk '{print $1}'); do
+  for dep in $(deps "$file"); do
     case "$dep" in
       /usr/lib/*|/System/*) ;;
-      /*)
-        base=$(basename "$dep")
-        install_name_tool -change "$dep" "@rpath/$base" "$file" 2>/dev/null || true ;;
       "$PREFIX"/*)
         # Chemin absolu vers notre propre arbre : le rendre relatif au binaire qui le charge.
         local target="${dep#$PREFIX/}"
         local back; back=$(python3 -c "import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))" "$STAGE/$target" "$dir")
         install_name_tool -change "$dep" "@loader_path/$back" "$file" 2>/dev/null || true ;;
+      /*)
+        base=$(basename "$dep")
+        install_name_tool -change "$dep" "@rpath/$base" "$file" 2>/dev/null || true ;;
     esac
   done
 }
@@ -220,10 +224,30 @@ PYEOF2
     echo "  rpath posé dans sbin/ld_n"
   fi
 
+  # Les objets .o universels (lipo) passent pour des programmes non signés à la notarisation, qui refuse alors
+  # tout le paquet ; un objet d'une seule architecture, lui, passe. On les sépare donc par architecture, et
+  # ld_n — qui lie n_calchep.o à chaque processus, chez l'utilisateur — prend celui de la machine.
+  for o in "$STAGE"/lib/*.o; do
+    [ -f "$o" ] || continue
+    if lipo "$o" -verify_arch arm64 x86_64 2>/dev/null; then
+      for arch in arm64 x86_64; do lipo "$o" -thin "$arch" -output "${o%.o}-$arch.o"; done
+      rm "$o"
+      echo "  $(basename "$o") séparé par architecture"
+    fi
+  done
+  if [ -f "$STAGE/lib/n_calchep-arm64.o" ] && [ -f "$STAGE/sbin/ld_n" ]; then
+    /usr/bin/sed -i '' 's|\$cLib/n_calchep\.o|$cLib/n_calchep-$(uname -m).o|' "$STAGE/sbin/ld_n"
+    grep -q 'n_calchep-$(uname -m).o' "$STAGE/sbin/ld_n" || { echo "ld_n : n_calchep.o introuvable à remplacer" >&2; exit 1; }
+  fi
+
   # Le compilateur invoqué pour chaque nouveau processus doit exister chez l'utilisateur : `cc` des outils
   # Xcode, et non le gcc de MacPorts, qui ne part pas avec nous.
   for f in "$STAGE/FlagsForMake" "$STAGE/FlagsForSh"; do
     [ -f "$f" ] && /usr/bin/sed -i '' "s|/opt/local/bin/gcc-mp-15|cc|g; s|/opt/local/bin/gfortran-mp-15|gfortran|g" "$f"
+    # Et sans architecture imposée : la construction a écrit « -arch arm64 » (ou x86_64) dans ces drapeaux.
+    # Gardé, il ferait compiler sur un Mac Intel un processus arm64 qu'il ne pourrait pas exécuter ; sans lui,
+    # cc compile pour la machine où il tourne, et les bibliothèques universelles du module conviennent.
+    [ -f "$f" ] && /usr/bin/sed -i '' -E "s/ ?-arch (arm64|x86_64)//g" "$f"
   done
 fi
 

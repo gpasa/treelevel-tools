@@ -54,6 +54,10 @@ public sealed class ColliderChannelConverter : JsonConverter<MCProcess.Channel>
             "qcd" => MCProcess.Channel.Qcd,
             "photoproduction" => MCProcess.Channel.Photoproduction,
             "soft" => MCProcess.Channel.Soft,
+            "annihilation" => MCProcess.Channel.Annihilation,
+            "neutralCurrent" => MCProcess.Channel.NeutralCurrent,
+            "chargedCurrent" => MCProcess.Channel.ChargedCurrent,
+            "inclusive" => MCProcess.Channel.Inclusive,
             _ => MCProcess.Channel.SingleBoson,
         };
 
@@ -65,6 +69,10 @@ public sealed class ColliderChannelConverter : JsonConverter<MCProcess.Channel>
             MCProcess.Channel.Qcd => "qcd",
             MCProcess.Channel.Photoproduction => "photoproduction",
             MCProcess.Channel.Soft => "soft",
+            MCProcess.Channel.Annihilation => "annihilation",
+            MCProcess.Channel.NeutralCurrent => "neutralCurrent",
+            MCProcess.Channel.ChargedCurrent => "chargedCurrent",
+            MCProcess.Channel.Inclusive => "inclusive",
             _ => "singleBoson",
         });
 }

@@ -9,7 +9,7 @@ import Foundation
 /// packaging script replaces that prefix with a token in every text file, and what remains is fixed here,
 /// in a writable folder — the application bundle stays read-only and signed, as it must.
 enum ModuleSetup {
-    /// ~/Library/Application Support/TreeLevel MC Engine/prepared/<module>
+    /// ~/Library/Application Support/TreeLevel Tools/prepared/<module>
     static func preparedDirectory(for module: String) -> URL {
         let dir = Installation.supportDirectory.appendingPathComponent("prepared/\(module)", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)

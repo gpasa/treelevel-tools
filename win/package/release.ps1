@@ -1,5 +1,5 @@
-﻿# Assembles what a user of TreeLevel downloads on Windows: the engine and the Pythia 8 module, in one folder
-# to unpack. Herwig and Sherpa are not here — they come in the container image.
+﻿# Assembles what a user of TreeLevel downloads on Windows: the host, the C++ engine and the Pythia 8 module, in
+# one folder to unpack. Herwig, Sherpa, WHIZARD and CalcHEP are not here — they come in the container image.
 #
 #   .\release.ps1 -Pythia "$env:LOCALAPPDATA\TreeLevel Tools\src\pythia8318"
 #   .\release.ps1 -Pythia <sources> -Arch x64 -NoPdfData
@@ -48,6 +48,11 @@ Say "Moteur $version ($rid)"
 if ($LASTEXITCODE -ne 0) { Fail 'the engine did not build' }
 Copy-Item (Join-Path $out "publish-$Arch\treelevel-tools.exe") $staging
 
+# --- the C++ engine, which writes the cards and runs Pythia ------------------------------------------------
+Say "Moteur C++ ($Arch)"
+& (Join-Path $root 'engine\build.ps1') -Arch $Arch -Prefix $staging
+if ($LASTEXITCODE -ne 0) { Fail 'the C++ engine did not build' }
+
 # --- the Pythia module --------------------------------------------------------------------------------------
 if (-not $EngineOnly) {
     # build.ps1 knows where the sources usually sit and says so clearly when it cannot find them; asking for
@@ -67,6 +72,7 @@ if (-not $EngineOnly) {
 
 # --- what goes with it --------------------------------------------------------------------------------------
 Copy-Item (Join-Path $repo 'LICENSE') (Join-Path $staging 'LICENSE.txt') -ErrorAction SilentlyContinue
+Copy-Item (Join-Path $repo 'CREDITS.md') (Join-Path $staging 'CREDITS.md')
 @"
 TreeLevel Tools $version — $Arch
 
@@ -81,24 +87,29 @@ enregistrer, aucun service, aucun compte. Pour désinstaller, supprimez le dossi
 
 Ce qu'il contient
 -----------------
-    treelevel-tools.exe          le moteur
-    Modules\pythia8\          Pythia 8 et ses données
+    treelevel-tools.exe          ce que TreeLevel lance : trouve Docker, prépare le travail
+    treelevel-engine.exe         le moteur : écrit la carte du générateur et le mène
+    Modules\pythia8\             Pythia 8 et ses données
+    CREDITS.md                   les générateurs, leurs auteurs et leurs licences
 
 Pour vérifier depuis une console :
 
     "%LOCALAPPDATA%\Programs\TreeLevel Tools\treelevel-tools.exe" capabilities
 
-Herwig 7 et Sherpa 3
---------------------
-Ils n'existent pas pour Windows et arrivent dans une image de conteneur :
+Herwig 7, Sherpa 3, WHIZARD 3 et CalcHEP 3
+------------------------------------------
+Ils n'existent pas pour Windows et arrivent dans une image de conteneur, avec Docker Desktop :
 
-    docker pull ghcr.io/gpasa/treelevel-tools-engine:$version
+    docker pull ghcr.io/gpasa/treelevel-tools:latest
+
+Dans les Réglages de TreeLevel, la case « Tout faire tourner dans l'image Docker » y envoie
+aussi Pythia ; sans elle, Pythia tourne ici, en natif.
 
 Licence
 -------
 GPL v3 ou ultérieure. Pythia 8 est sous GPL v2 ou ultérieure ; sa licence est dans
 Modules\pythia8\COPYING.pythia8 et ses sources sont celles de https://pythia.org,
-construites par win/backends/pythia du dépôt https://github.com/gpasa/treelevel-tools-engine.
+construites par win/backends/pythia du dépôt https://github.com/gpasa/treelevel-tools.
 "@ | Set-Content (Join-Path $staging 'LISEZMOI.txt') -Encoding utf8
 
 # --- the archive --------------------------------------------------------------------------------------------

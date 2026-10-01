@@ -113,17 +113,21 @@ jobs:
           if [ -z "$tag" ] || [ "$tag" = "$GITHUB_REF_NAME" ]; then
             # Not a tag push: the number the two engines are pinned to, which is in the file they share. Taking
             # it from either engine's own version would publish under a tag neither of them asks for.
-            tag=$(grep -oE 'ToolsVersion = "[^"]+' win/treelevel-tools/MCEngineProtocol.cs | head -1 | cut -d'"' -f2)
+            tag=$(grep -oE 'toolsVersion = "[^"]+' Protocol/MCEngineProtocol.swift | head -1 | cut -d'"' -f2)
           fi
           echo "tag=${tag:-latest}" >> "$GITHUB_OUTPUT"
         shell: bash
 
+      # « latest » ne suit que les versions finales (0.4.0, pas 0.4.0-rc1) : une image d'essai publiée pour
+      # éprouver la CI ne doit pas devenir celle que reçoit quiconque tire sans étiquette.
       - name: Join the two architectures under one tag
         working-directory: /tmp/digests
         run: |
+          tag="${{ steps.version.outputs.tag }}"
+          latest=()
+          if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then latest=(-t "$REGISTRY/$IMAGE:latest"); fi
           docker buildx imagetools create \
-            -t "$REGISTRY/$IMAGE:${{ steps.version.outputs.tag }}" \
-            -t "$REGISTRY/$IMAGE:latest" \
+            -t "$REGISTRY/$IMAGE:$tag" "${latest[@]}" \
             $(printf "$REGISTRY/$IMAGE@sha256:%s " *)
         shell: bash
 

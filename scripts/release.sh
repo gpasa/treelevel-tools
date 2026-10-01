@@ -5,7 +5,7 @@
 #   scripts/release.sh                 build, sign, notarise, staple, make the disk image
 #   scripts/release.sh 0.2.0           the same, with that version number
 #   scripts/release.sh --no-notarize   stop after signing (offline check of the build)
-#   scripts/release.sh --upload        also create the GitLab release (needs the two variables below)
+#   scripts/release.sh --upload        also create the GitHub release mac-<version> (gh authenticated)
 #
 # Prerequisites, done once:
 #   • a "Developer ID Application" certificate in the keychain (Xcode › Settings › Accounts › Manage Certificates)
@@ -60,7 +60,13 @@ mkdir -p "$OUT"
 
 # --- Build ------------------------------------------------------------------
 say "Command line tool"
-/usr/bin/swift build -c release
+# Universels, comme l'application : un iMac Intel les exécute aussi (la 0.4.0 publiée d'abord ne les
+# avait qu'en arm64 — rien ne tournait sur Intel).
+/usr/bin/swift build -c release --arch arm64 --arch x86_64
+BIN=.build/apple/Products/Release
+# Le moteur C++ : les cartes de tous les générateurs, les mêmes que dans l'image Linux.
+/usr/bin/clang++ -O2 -std=c++17 -arch arm64 -arch x86_64 -mmacosx-version-min=13.0 -I Backends/pythia \
+  Backends/engine/engine.cpp -o "$BIN/treelevel-engine"
 say "Application"
 (cd App && xcodegen generate >/dev/null)
 xcodebuild -project App/TreeLevelMCEngine.xcodeproj -scheme TreeLevelMCEngine -configuration Release \
@@ -69,7 +75,11 @@ APP_SRC="App/build/Build/Products/Release/TreeLevel Tools.app"
 [ -d "$APP_SRC" ] || { echo "the application was not built" >&2; exit 1; }
 APP="$OUT/TreeLevel Tools.app"
 cp -R "$APP_SRC" "$APP"
-cp .build/release/treelevel-tools "$APP/Contents/MacOS/treelevel-tools"
+cp "$BIN/treelevel-tools" "$APP/Contents/MacOS/treelevel-tools"
+cp "$BIN/treelevel-engine" "$APP/Contents/MacOS/treelevel-engine"
+for f in "$APP/Contents/MacOS/"*; do
+  lipo "$f" -verify_arch arm64 x86_64 || { echo "$f n'est pas universel" >&2; exit 1; }
+done
 
 # --- Modules -----------------------------------------------------------------
 # L'utilisateur n'installe qu'une application : les générateurs voyagent dedans. Ils ont été rendus
@@ -91,6 +101,29 @@ if [ -d "$MODULES_SRC" ]; then
 else
   echo "  (aucun module : scripts/package_module.sh n'a pas tourné)"
 fi
+
+# Chaque binaire embarqué doit tourner sur les deux architectures et dès macOS 13, comme l'application. La
+# première 0.4.0 est partie avec des générateurs arm64 seulement, et liés à des bibliothèques qui exigeaient
+# macOS 26 : rien ne le disait, et un iMac Intel n'avait que CalcHEP, qui échouait au premier travail.
+say "Architectures et version minimale"
+BAD_BIN=""
+while IFS= read -r -d '' f; do
+  # Les objets .o de CalcHEP sont séparés exprès par architecture (la notarisation refuse un .o universel) ;
+  # ld_n choisit celui de la machine.
+  case "$(file -b "$f")" in *"Mach-O"*object*) continue ;; *Mach-O*) ;; *) continue ;; esac
+  lipo "$f" -verify_arch arm64 x86_64 2>/dev/null || BAD_BIN="$BAD_BIN
+  pas universel   ${f#$APP/}"
+  for v in $(vtool -show-build "$f" 2>/dev/null | awk '$1=="minos"{print $2}'); do
+    [ "$(printf '%s\n13.0\n' "$v" | sort -V | tail -1)" = "13.0" ] || BAD_BIN="$BAD_BIN
+  macOS $v requis   ${f#$APP/}"
+  done
+done < <(find "$APP/Contents" -type f -print0)
+if [ -n "$BAD_BIN" ]; then
+  echo "  ⚠ binaires qui ne tourneraient pas partout :" >&2
+  printf '%s\n' "$BAD_BIN" | grep -v '^$' | sort -u | head -30 >&2
+  exit 1
+fi
+echo "  tout est universel et vise macOS 13"
 
 # --- Sign -------------------------------------------------------------------
 # Nested binaries first, then the bundle; hardened runtime and a secure timestamp, both required for notarisation.
@@ -141,23 +174,33 @@ cat > "$OUT/release-notes.md" <<NOTES
 Les outils sous licence GPL que TreeLevel ne peut pas contenir, sur votre machine — rien ne sort d'ici.
 TreeLevel est sandboxé et ne lance aucun programme ; ce paquet est ce qui a le droit de les exécuter.
 
+- Pour Mac **Apple Silicon et Intel**, macOS 13 ou plus récent.
 - Glisser \`TreeLevel Tools.app\` dans \`/Applications\`, la lancer une fois.
 - Quatre générateurs sont **déjà dedans**, rien d'autre à installer :
-  - **Pythia 8** et **Herwig 7** habillent les événements de TreeLevel : gerbe, hadronisation, désintégrations.
+  - **Pythia 8** et **Herwig 7** habillent les événements de TreeLevel entre deux leptons : gerbe,
+    hadronisation, désintégrations. **Pythia 8** mène aussi la source Machine : deux faisceaux, une énergie,
+    et tout ce que la collision produit.
   - **Sherpa 3** et **CalcHEP 3** calculent eux-mêmes le processus décrit par le diagramme.
 - TreeLevel les propose alors dans l'espace Génération.
 
-**WHIZARD 3** n'y est pas : il compile chaque processus avec gfortran, que ni macOS ni Xcode ne fournissent.
-Deux façons de l'avoir, toutes deux à cocher dans la fenêtre de TreeLevel Tools :
+Les cartes de tous les générateurs sont écrites par le même moteur C++ qu'au sein de l'image Docker : un
+même travail donne la même carte au Mac et sous Linux.
 
-- l'**image Docker** \`ghcr.io/gpasa/treelevel-tools\`, qui porte les cinq outils dans un environnement cohérent ;
+**WHIZARD 3** n'y est pas : il compile chaque processus avec gfortran, que ni macOS ni Xcode ne fournissent.
+Deux façons de l'avoir, à cocher dans la fenêtre de TreeLevel Tools :
+
+- l'**image Docker** \`ghcr.io/gpasa/treelevel-tools:latest\`, qui porte les cinq outils ; cochée, elle mène
+  **tous** les travaux, et les générateurs livrés ici se taisent ;
 - votre **propre installation** (MacPorts, Homebrew), si vous en avez une.
 
 Aucune des deux ne sert d'office : par défaut, seuls les générateurs livrés ici sont proposés, pour qu'un
 même document donne le même résultat sur deux machines.
 
 Signé et notarisé par Apple. Sommes de contrôle dans \`SHA256SUMS.txt\`.
+
 NOTES
+# Les générateurs, leurs auteurs, leurs sites et ce qu'il faut citer : la même page que le dépôt (CREDITS.md).
+sed 's/^# /## /' CREDITS.md >> "$OUT/release-notes.md"
 say "Prêt"
 ls -lh "$OUT" | sed 's/^/  /'
 
@@ -166,7 +209,11 @@ ls -lh "$OUT" | sed 's/^/  /'
 if [ "$UPLOAD" = 1 ]; then
   say "Publication"
   command -v gh >/dev/null || { echo "gh n'est pas installé" >&2; exit 1; }
-  gh release create "v$VERSION" --title "TreeLevel Tools $VERSION" \
+  # Les releases du dépôt portent leur plateforme : mac-<version> ici, win-<version> pour Windows. Le tag naît
+  # sur le commit d'où le paquet a été construit, qui doit être poussé.
+  git push -q origin HEAD
+  gh release create "mac-$VERSION" --target "$(git rev-parse HEAD)" --latest \
+     --title "TreeLevel Tools $VERSION — macOS" \
      --notes-file "$OUT/release-notes.md" "$OUT"/*.dmg "$OUT"/*.zip "$OUT/SHA256SUMS.txt" \
-     && echo "  release v$VERSION créée"
+     && echo "  release mac-$VERSION créée"
 fi

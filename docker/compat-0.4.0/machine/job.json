@@ -1,0 +1,34 @@
+{
+  "protocolVersion": 2,
+  "id": "compat-0.4.0-machine",
+  "generator": "pythia8",
+  "process": "e⁻ e⁺ → tout, 200 GeV",
+  "events": 50,
+  "seed": 2024,
+  "shower": false,
+  "hadronisation": false,
+  "multipleInteractions": false,
+  "decays": false,
+  "hardProcess": {
+    "beams": [
+      11,
+      -11
+    ],
+    "beamEnergies": [
+      100,
+      100
+    ],
+    "finalState": [],
+    "couplingOrders": {},
+    "model": "SM",
+    "colliderMode": "collider",
+    "channels": [
+      "inclusive"
+    ],
+    "fixedTarget": false,
+    "mixConfigurations": false,
+    "mixEqualShares": false
+  },
+  "input": "events.lhe",
+  "output": "events.hepmc"
+}

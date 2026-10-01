@@ -9,7 +9,7 @@ struct EngineApp: App {
     @StateObject private var state = EngineState.shared
 
     var body: some Scene {
-        Window("TreeLevel MC Engine", id: "main") {
+        Window("TreeLevel Tools", id: "main") {
             EngineWindow().environmentObject(state)
         }
         .defaultSize(width: 620, height: 460)
@@ -63,7 +63,7 @@ final class EngineState: ObservableObject {
     static let shared = EngineState()
     @Published var entries: [JobHistory.Entry] = []
     @Published var capabilities: MCCapabilities?
-    let version = "0.3.0"
+    let version = "0.4.0"
 
 
     func refreshCapabilities() { capabilities = Installation.publishCapabilities(engineVersion: version) }
@@ -128,19 +128,22 @@ struct EngineWindow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("TreeLevel MC Engine").font(.title2.bold())
-            Text("Gerbe partonique et hadronisation des événements de TreeLevel, sur cette machine. Les générateurs (Pythia 8, Herwig 7) sont sous licence GPL ; ce programme les pilote, TreeLevel ne les contient pas.")
+            Text("TreeLevel Tools").font(.title2.bold())
+            Text("Les générateurs Monte-Carlo de TreeLevel, sur cette machine : gerbe et hadronisation de ses événements, ou collisions entières d'une machine. Pythia 8, Herwig 7, Sherpa 3, WHIZARD 3 et CalcHEP 3 sont sous licence GPL ; ce programme les pilote, TreeLevel ne les contient pas.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             GroupBox("Modules") {
                 VStack(alignment: .leading, spacing: 4) {
-                    if let caps = state.capabilities {
+                    if let caps = state.capabilities, caps.generators.isEmpty, useContainer {
+                        Text("Docker ne répond pas, ou l'image \(Installation.image()) n'est pas là : rien ne tournera tant qu'elle est choisie.")
+                            .foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
+                    } else if let caps = state.capabilities {
                         ForEach(caps.generators, id: \.rawValue) { g in
                             Text("• " + Self.describe(g, version: caps.versions[g.rawValue]))
                         }
                     } else {
                         Text("Aucun module trouvé.")
                     }
-                    Text("Emplacement : ~/Library/Application Support/TreeLevel MC Engine/Modules")
+                    Text("Emplacement : ~/Library/Application Support/TreeLevel Tools/Modules")
                         .font(.callout).foregroundStyle(.secondary)
                     Divider()
                     Toggle("utiliser aussi les générateurs déjà installés sur cette machine",
@@ -151,12 +154,12 @@ struct EngineWindow: View {
                         }
                     Text("Par défaut, seuls les générateurs livrés avec ce programme sont proposés : ce sont ceux dont les versions sont connues, et deux machines donnent alors le même résultat pour le même document. En cochant, un Herwig de Homebrew ou un WHIZARD de MacPorts deviennent utilisables — leur provenance est indiquée à côté de leur version.")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                    Toggle("utiliser l'image Docker, si elle est présente", isOn: $useContainer)
+                    Toggle("tout faire tourner dans l'image Docker", isOn: $useContainer)
                         .onChange(of: useContainer) { permis in
                             Installation.setAllowsContainer(permis)
                             state.refreshCapabilities()
                         }
-                    Text("L'image est l'autre manière d'avoir les générateurs : une commande au lieu d'une série d'installations. Ce n'est pas un filet sous les modules livrés — elle ne porte ni les mêmes versions ni les mêmes réglages — alors elle ne sert que si vous la demandez. WHIZARD 3 n'existe que par là sur macOS : il compile chaque processus avec gfortran, que le système ne fournit pas.")
+                    Text("L'image est l'autre manière d'avoir les générateurs : une commande au lieu d'une série d'installations. Choisie, elle mène tous les travaux et les modules de ce Mac se taisent — elle ne porte ni les mêmes versions ni les mêmes réglages, et un document ne doit pas changer de générateur selon ce qui est installé. WHIZARD 3 n'existe que par là sur macOS : il compile chaque processus avec gfortran, que le système ne fournit pas.")
                         .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

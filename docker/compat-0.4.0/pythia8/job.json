@@ -1,0 +1,14 @@
+{
+  "protocolVersion": 2,
+  "id": "compat-0.4.0-pythia8",
+  "generator": "pythia8",
+  "process": "e- e+ -> b b~ at 200 GeV",
+  "events": 50,
+  "seed": 11,
+  "shower": true,
+  "hadronisation": true,
+  "multipleInteractions": false,
+  "decays": true,
+  "input": "events.lhe",
+  "output": "events.hepmc"
+}

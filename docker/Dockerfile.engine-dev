@@ -1,0 +1,22 @@
+# Développement de l'engin de l'image sans reconstruire les générateurs (des heures) : on part d'une image
+# publiée, on y compile l'engin C++ et le pilote Pythia du dépôt, et on les met à la place. Pour l'essai local ;
+# la CI construit l'image entière depuis docker/Dockerfile.
+#
+#   docker build -f docker/Dockerfile.engine-dev --build-arg BASE=ghcr.io/gpasa/treelevel-tools:0.3.0 \
+#                -t ghcr.io/gpasa/treelevel-tools:0.4.0-dev .
+ARG BASE=ghcr.io/gpasa/treelevel-tools:0.3.0
+FROM ${BASE} AS build
+RUN apt-get update && apt-get install -y --no-install-recommends g++ && rm -rf /var/lib/apt/lists/*
+COPY Backends/pythia/main.cpp Backends/pythia/JobCard.h Backends/engine/engine.cpp /src/
+RUN mkdir -p /out \
+    && g++ -O2 -std=c++17 -I/src /src/engine.cpp -o /out/treelevel-tools \
+    && g++ -O2 -std=c++17 -I/src /src/main.cpp -o /out/treelevel-pythia \
+         -I"$PREFIX/include" -L"$PREFIX/lib" -lpythia8 -Wl,-rpath,"$PREFIX/lib"
+
+FROM ${BASE}
+COPY --from=build /out/treelevel-tools /usr/local/bin/treelevel-tools
+COPY --from=build /out/treelevel-pythia /tmp/treelevel-pythia
+RUN mv /tmp/treelevel-pythia "$PREFIX/bin/treelevel-pythia"
+WORKDIR /job
+ENTRYPOINT ["/usr/local/bin/treelevel-tools"]
+CMD ["capabilities"]

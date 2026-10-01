@@ -1,7 +1,7 @@
 #!/bin/sh
 # Éprouve une image : les six générateurs, un vrai travail pour chacun, et la section efficace qu'il rend.
 #
-#   docker/smoke.sh ghcr.io/gpasa/treelevel-tools:0.2.0
+#   docker/smoke.sh ghcr.io/gpasa/treelevel-tools:0.4.0
 #
 # La CI le lance sur un runner de chaque architecture, et il se lance aussi bien à la main — c'est la même
 # suite des deux côtés, ce qui évite qu'elles divergent. Rien n'est écrit dans le dépôt : chaque travail part
@@ -82,6 +82,9 @@ essai herwig7     test-job        3.1139 3.1140
 essai sherpa3     test-job-sherpa 2.5    3.6
 essai whizard3    test-job-sherpa 2.5    3.6
 essai calchep3    test-job-sherpa 2.5    3.6
+# Une machine, que seul Pythia mène : « tout ce que le détecteur voit » entre e⁻ et e⁺ à 200 GeV, deux tirages
+# réunis (les faisceaux, puis leur flux de photons). 1 125 pb au Mac comme dans l'image.
+essai pythia8     test-job-machine 900   1400
 
 if [ "$echecs" -gt 0 ]; then printf '\n%d échec(s)\n' "$echecs"; exit 1; fi
-printf '\nles six générateurs répondent\n'
+printf '\nles six générateurs répondent, et la machine\n'

@@ -24,7 +24,7 @@ public enum MCEngineProtocol {
     /// pendant que Windows retombait sur une autre — la même image aujourd'hui, aucune garantie demain. Les deux
     /// moteurs sont publiés ensemble et portent aussi ce numéro dans leur fichier de projet ; quand il bouge, il
     /// bouge partout.
-    public static let toolsVersion = "0.3.0"
+    public static let toolsVersion = "0.4.0"
 
     public static let jobFileName = "job.json"
     public static let inputFileName = "events.lhe"
@@ -157,6 +157,11 @@ public struct MCProcess: Codable, Equatable {
     public var couplingOrders: [String: Int]
     /// Minimum transverse momentum of the final state in GeV; nil keeps the generator's own cuts.
     public var minimumPT: Double?
+    /// Minimum momentum transfer Q² = −t in GeV² for the scatterings in the t channel (`neutralCurrent`,
+    /// `chargedCurrent`, and the scatterings `inclusive` opens): how hard the beams must knock each other.
+    /// nil lets the engine choose what a detector sees — ten degrees of deflection on a lepton ring, 4 GeV²
+    /// on an electron–proton ring.
+    public var minimumQ2: Double?
     /// Physics model. Only "SM" for now, but a generator that reads UFO files could take more.
     public var model: String
 
@@ -199,8 +204,18 @@ public struct MCProcess: Codable, Equatable {
     /// diffusion dure. Elle n'admet aucun seuil en impulsion transverse, qui retrancherait précisément ce
     /// qu'on vient voir, et elle ne se combine pas avec `qcd` : son fond non diffractif contient déjà la
     /// diffusion dure, que ses interactions multiples fabriquent.
+    ///
+    /// Depuis la 1.3, ce que l'expérience enregistre se choisit par phénomène, une seule famille à la fois :
+    /// `annihilation` — ff̄ → γ*/Z seul, sans le W —, `neutralCurrent` — la diffusion en voie t par un γ ou
+    /// un Z (Rutherford, Bhabha, diffusion profondément inélastique), seuil en Q² —, `chargedCurrent` — le W,
+    /// produit (ff̄′ → W, deux hadrons) ou échangé en voie t (e⁺e⁻ → νe ν̄e, e p → ν X) —, et `inclusive`,
+    /// « tout ce que le détecteur voit » : le moteur l'étend lui-même à ce que ces faisceaux permettent. Les
+    /// six familles d'avant restent lisibles ; un moteur antérieur ne connaît qu'elles.
     public enum Channel: String, Codable, CaseIterable {
         case singleBoson, bosonPair, bosonExchange, qcd, photoproduction, soft
+        case annihilation, neutralCurrent, chargedCurrent, inclusive
+        /// Ce qu'un moteur antérieur à la 1.3 sait lire.
+        public static let legacy: [Channel] = [.singleBoson, .bosonPair, .bosonExchange, .qcd, .photoproduction, .soft]
     }
     public var channels: [Channel] = [.singleBoson]
 
@@ -239,6 +254,7 @@ public struct MCProcess: Codable, Equatable {
         finalState = try c.decode([Int].self, forKey: .finalState)
         couplingOrders = try c.decodeIfPresent([String: Int].self, forKey: .couplingOrders) ?? [:]
         minimumPT = try c.decodeIfPresent(Double.self, forKey: .minimumPT)
+        minimumQ2 = try c.decodeIfPresent(Double.self, forKey: .minimumQ2)
         model = try c.decodeIfPresent(String.self, forKey: .model) ?? "SM"
         colliderMode = try c.decodeIfPresent(Mode.self, forKey: .colliderMode) ?? .exclusive
         channels = try c.decodeIfPresent([Channel].self, forKey: .channels) ?? [.singleBoson]
@@ -283,9 +299,21 @@ public struct MCCapabilities: Codable, Equatable {
     public var generators: [MCJob.Generator]
     /// Version of each generator, by its raw value ("pythia8": "8.310").
     public var versions: [String: String] = [:]
+    /// Les familles de voies que chaque générateur sait ouvrir en production inclusive — la source
+    /// « Machine » de l'espace Génération —, par nom brut du générateur. C'est au moteur de le dire : il est
+    /// seul à savoir ce que ses générateurs implémentent, et l'app n'affiche que ce qu'on lui annonce.
+    /// Absent chez un moteur antérieur à la 1.3 : voir `machineChannels(of:)`.
+    public var colliderChannels: [String: [MCProcess.Channel]]? = nil
     public init(engineVersion: String, generators: [MCJob.Generator]) {
         self.engineVersion = engineVersion
         self.generators = generators
+    }
+
+    /// Ce qu'un générateur sait ouvrir en production inclusive. Un moteur qui ne l'annonce pas encore est
+    /// antérieur à la 1.3 : on retient alors ce que la 1.2 savait faire, Pythia 8 et ses six familles.
+    public func machineChannels(of generator: MCJob.Generator) -> [MCProcess.Channel] {
+        if let table = colliderChannels { return table[generator.rawValue] ?? [] }
+        return generator == .pythia8 && generators.contains(.pythia8) ? MCProcess.Channel.legacy : []
     }
 }
 

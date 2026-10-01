@@ -4,3 +4,5 @@ App/*.xcodeproj
 Backends/pythia/treelevel-pythia
 *.o
 build/
+win/treelevel-tools/bin/
+win/treelevel-tools/obj/

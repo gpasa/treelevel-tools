@@ -1,22 +1,38 @@
 # TreeLevel Tools
 
-Gerbe partonique et hadronisation des événements produits par [TreeLevel](https://treelevel.pasahome.org),
-sur votre machine. TreeLevel écrit ses événements au niveau partonique dans un dossier local ; ce programme les
-passe à **Pythia 8** ou **Herwig 7** et réécrit le résultat en HepMC3, que TreeLevel relit. Rien ne transite par
-le réseau, aucun compte, aucun service.
+**[Téléchargements](#téléchargements)** · [Installation](#installation) · [Le conteneur](#lautre-voie--le-conteneur) · [Liens et crédits](#liens-et-crédits) · [Sommaire](#sommaire)
 
-Il est distribué séparément parce que Pythia et Herwig sont sous licence **GPL** : ce dépôt est GPL v3, TreeLevel
+Les générateurs d'événements de [TreeLevel](https://treelevel.pasahome.org), sur votre machine. TreeLevel écrit un
+travail dans un dossier local ; ce programme le confie à **Pythia 8**, **Herwig 7**, **Sherpa 3**, **WHIZARD 3** ou
+**CalcHEP 3** — gerbe et hadronisation de ses événements, ou collisions entières d'une machine — et réécrit le
+résultat en HepMC3, que TreeLevel relit. Rien ne transite par le réseau, aucun compte, aucun service. Sur iPad,
+Pythia 8 compilé en WebAssembly joue le même rôle, téléchargé depuis
+[sa release](https://github.com/gpasa/treelevel-tools/releases/tag/ipad-pythia-8.318).
+
+Il est distribué séparément parce que ces générateurs sont sous licence **GPL** : ce dépôt est GPL v3, et TreeLevel
 ne contient aucun de leur code.
+
+## Téléchargements
+
+| système | télécharger | ce qu'il contient |
+|---|---|---|
+| **macOS** 13 ou plus récent, Apple Silicon et Intel | [TreeLevelTools-0.4.0.dmg](https://github.com/gpasa/treelevel-tools/releases/download/mac-0.4.0/TreeLevelTools-0.4.0.dmg) | Pythia 8, Herwig 7, Sherpa 3 et CalcHEP 3, prêts à tourner |
+| **Windows** 10 et 11 | [x64](https://github.com/gpasa/treelevel-tools/releases/download/win-0.4.0/TreeLevelTools-0.4.0-x64.zip) · [ARM64](https://github.com/gpasa/treelevel-tools/releases/download/win-0.4.0/TreeLevelTools-0.4.0-arm64.zip) | Pythia 8 ; les autres par l'image Docker |
+| **iPad** | depuis les réglages de TreeLevel ([la release](https://github.com/gpasa/treelevel-tools/releases/tag/ipad-pythia-8.318)) | Pythia 8 en WebAssembly |
+| **Docker**, tous systèmes | `docker pull ghcr.io/gpasa/treelevel-tools:latest` | les cinq générateurs, WHIZARD 3 compris |
+
+Toutes les versions et leurs notes : [releases](https://github.com/gpasa/treelevel-tools/releases). L'installation pas à pas est [plus bas](#installation).
 
 ## Sommaire
 
+- [Téléchargements](#téléchargements)
 - [Liens et crédits](#liens-et-crédits) — [les générateurs](#les-générateurs), [ce qu'ils embarquent](#ce-quils-embarquent),
   [les bibliothèques](#les-bibliothèques), [les formats](#les-formats), [les outils](#les-outils-qui-les-construisent-et-les-font-tourner)
 - [Ce que ça fait](#ce-que-ça-fait)
 - [Où vivent les exécutables](#où-vivent-les-exécutables)
 - [Installation](#installation) — [l'autre voie : le conteneur](#lautre-voie--le-conteneur)
 - [En ligne de commande](#en-ligne-de-commande)
-- [Construire le pilote Pythia](#construire-le-pilote-pythia)
+- [Construire les modules](#construire-les-modules) — [le pilote Pythia](#construire-le-pilote-pythia)
 - [Construire le module Herwig 7](#construire-le-module-herwig-7)
 - [Construire les modules Sherpa, WHIZARD et CalcHEP](#construire-les-modules-sherpa-whizard-et-calchep) —
   [ce que chacun attend](#ce-que-chacun-attend)
@@ -105,21 +121,13 @@ scripts/release.sh      # construit, signe, notarise et fabrique le .dmg à dist
 
 ## Installation
 
-1. Télécharger `TreeLevel Tools.app` depuis les *releases* et la glisser dans `/Applications`.
-2. Installer un générateur :
-   - **Pythia 8** — `sudo port install pythia` (MacPorts), puis `make -C Backends/pythia install` : cela
-     construit le petit pilote `treelevel-pythia` et le place dans
-     `~/Library/Application Support/TreeLevel Tools/Modules/pythia8/`. Le Makefile trouve Pythia par
-     `pythia8-config` s'il existe, sinon dans les dispositions habituelles de MacPorts, de Homebrew ou d'une
-     compilation locale. **HepMC3 n'est pas nécessaire** : le pilote écrit lui-même le fichier HepMC3 (le port
-     `pythia` de MacPorts ne fournit ni Pythia8Plugins ni HepMC3). Avec un Pythia compilé avec son interface
-     HepMC3, `make WITH_HEPMC3=1` l'utilise à la place.
-   - **Herwig 7** — il n'existe pas de port MacPorts ; utiliser le script d'installation officiel
-     (`herwig-bootstrap`) ou un autre gestionnaire. Le moteur cherche `Herwig` dans
-     `~/Library/Application Support/TreeLevel Tools/Modules/herwig7/bin`, puis dans `/opt/local/bin`,
-     `/usr/local/bin` et `/opt/homebrew/bin`, et ignore une installation cassée (bibliothèque manquante).
-3. Lancer l'application une fois : elle écrit `capabilities.json` dans son dossier de support, et TreeLevel
-   propose alors les générateurs trouvés.
+1. Télécharger le [DMG](#téléchargements), glisser `TreeLevel Tools.app` dans `/Applications`, la lancer une fois.
+   Elle est signée et notarisée par Apple.
+2. C'est tout : Pythia 8, Herwig 7, Sherpa 3 et CalcHEP 3 voyagent dans l'application, construits pour Apple
+   Silicon et Intel et pour macOS 13 et suivants. Au premier lancement, elle écrit `capabilities.json` dans son
+   dossier de support, et TreeLevel propose alors ces générateurs dans l'espace Génération.
+3. WHIZARD 3 n'y est pas — il compile chaque processus avec gfortran, que macOS ne fournit pas. Pour lui, ou
+   pour tout faire tourner dans un même environnement, il y a le conteneur ci-dessous.
 
 ### L'autre voie : le conteneur
 
@@ -178,6 +186,15 @@ ligne ouvre le dossier du travail ou son journal, et « Vider la liste » l'oubl
 
 Trois générateurs : `pythia8`, `herwig7` et `passthrough` (aucune gerbe — les événements sont convertis tels
 quels, pour vérifier la chaîne ou comparer avec le processus dur).
+
+## Construire les modules
+
+Depuis la 0.4.0 refaite le 1ᵉʳ octobre 2026, tout ce que les modules emportent se construit depuis les sources,
+pour macOS 13, par `scripts/build_stack.sh` — une fois sur un Mac Apple Silicon, une fois sur un Mac Intel, au
+même chemin —, puis `scripts/merge_stack.sh` fond les deux arbres en un arbre universel et
+`scripts/package_module.sh` en fait des modules relogeables. `scripts/test_generators.sh` fait tourner un vrai
+travail par générateur depuis l'application construite. Les sections qui suivent décrivent la construction
+d'avant, par MacPorts, gardée pour ses remarques sur chaque générateur.
 
 ## Construire le pilote Pythia
 
@@ -324,6 +341,7 @@ partagé avec TreeLevel, est sous licence MIT (voir son en-tête) pour que les d
 
 ## Windows
 
-Le port Windows est dans [`win/`](win/) : le moteur en C#, le module Pythia 8 construit avec MSVC (`win/backends/pythia`),
-Herwig et Sherpa dans WSL. Le protocole est le même : un dossier de travail écrit sur un Mac se relit sur
+Le port Windows est dans [`win/`](win/) : un hôte en C#, le moteur C++ commun (`Backends/engine`) compilé avec
+MSVC, le module Pythia 8 construit de même (`win/backends/pythia`) ; Herwig, Sherpa, WHIZARD et CalcHEP par l'image
+Docker. Le protocole est le même : un dossier de travail écrit sur un Mac se relit sur
 Windows et inversement. Voir [`win/README.md`](win/README.md).

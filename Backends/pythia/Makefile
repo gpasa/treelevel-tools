@@ -46,7 +46,7 @@ ifdef WITH_HEPMC3
   FLAGS += -DTREELEVEL_WITH_HEPMC3 $(HEPMC)
 endif
 
-treelevel-pythia: main.cpp
+treelevel-pythia: main.cpp JobCard.h
 	$(CXX) $(CXXFLAGS) $< -o $@ $(FLAGS)
 
 install: treelevel-pythia
@@ -60,6 +60,14 @@ install: treelevel-pythia
 	else \
 	  echo "  ⚠ pdfdata introuvable : les faisceaux hadroniques ne s'initialiseront pas"; \
 	fi
+	@# Depuis 8.31x, les tunes (Monash pour les leptons compris) et les réglages types sont des fichiers à part,
+	@# lus à l'initialisation : sans eux tout travail e⁺e⁻ échoue sur « did not find file tunes/Monash2013-ee.cmnd ».
+	@for d in tunes setups; do \
+	  if [ -d "$(dir $(XMLDOC))$$d" ]; then \
+	    mkdir -p "$(MODULES)/share/Pythia8"; rm -rf "$(MODULES)/share/Pythia8/$$d"; \
+	    /usr/bin/ditto "$(dir $(XMLDOC))$$d" "$(MODULES)/share/Pythia8/$$d"; echo "  $$d"; \
+	  fi; \
+	done
 	@if [ -d "$(XMLDOC)" ]; then \
 	  mkdir -p "$(MODULES)/share/Pythia8"; \
 	  rm -rf "$(MODULES)/share/Pythia8/xmldoc"; \

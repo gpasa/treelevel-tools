@@ -26,7 +26,7 @@ public static class MCEngineProtocol
     /// It was derived from each engine's own version before, and that let macOS pin one tag while Windows fell
     /// back to another — the same image today, and no guarantee tomorrow. Both engines are released together and
     /// carry this number in their project file too; when it moves, it moves everywhere.</summary>
-    public const string ToolsVersion = "0.3.0";
+    public const string ToolsVersion = "0.4.0";
 
     public const string JobFileName = "job.json";
     public const string InputFileName = "events.lhe";
@@ -130,23 +130,34 @@ public sealed class MCProcess
     /// <c>SingleBoson</c> is annihilation — ff̄ → γ*/Z, ff̄' → W — and needs two beams that can annihilate.
     /// <c>BosonPair</c> covers WW, ZZ and ZW, above their threshold, and needs the same. <c>BosonExchange</c> is
     /// the t channel: the two beams scatter off each other by passing a γ, a Z or a W between them. Nothing has
-    /// to annihilate, which is why an electron and a proton make a perfectly good machine — HERA was one — and
-/// <c>Photoproduction</c> is the other machine: a lepton beam enters as the flux of quasi-real photons it
-    /// radiates, and those photons interact hadronically. At HERA it is five times deeply inelastic scattering,
-    /// and between two leptons it is two-photon physics. It cannot be combined with the families above inside one
-    /// run — turning the photon flux on replaces the beam, and the lepton stops colliding as a lepton — so asking
-    /// for both means two runs, which is what <see cref="MixConfigurations"/> is for.
-        /// <c>Qcd</c> is hard parton scattering, which is the bulk of what a proton ring makes: without it a hadron
-    /// machine produces Drell–Yan and nothing else, which is a channel rather than a collider. It diverges as the
-    /// transverse momentum goes to zero, so it is the one family that insists on a floor.
-    /// why leaving this family out would rule out a whole kind of collider rather than a mistaken setting.</summary>
-    public enum Channel { SingleBoson, BosonPair, BosonExchange, Qcd, Photoproduction, Soft }
+    /// to annihilate, which is why an electron and a proton make a perfectly good machine — HERA was one.
+    /// <c>Qcd</c> is hard parton scattering, the bulk of what a proton ring makes: without it a hadron machine
+    /// produces Drell–Yan and nothing else, which is a channel rather than a collider. It diverges as the
+    /// transverse momentum goes to zero, so it insists on a floor. <c>Photoproduction</c> is the other machine: a
+    /// lepton beam enters as the flux of quasi-real photons it radiates. It cannot share a run with the families
+    /// above — the photon flux replaces the beam —, so asking for both means two runs (<see cref="MixConfigurations"/>).
+    ///
+    /// Since 1.3 what the experiment records is chosen by phenomenon, one family at a time: <c>Annihilation</c> —
+    /// ff̄ → γ*/Z alone, without the W —, <c>NeutralCurrent</c> — t-channel scattering by a γ or a Z (Rutherford,
+    /// Bhabha, deeply inelastic scattering), with a floor in Q² —, <c>ChargedCurrent</c> — the W, produced
+    /// (ff̄′ → W between two hadrons) or exchanged in the t channel (e⁺e⁻ → νe ν̄e, e p → ν X) —, and
+    /// <c>Inclusive</c>, « everything the detector sees », which the engine widens itself to what the beams allow.
+    /// The six families before remain readable; an engine older than 1.3 knows only them (<see cref="Legacy"/>).
+    /// The engine, not this file, turns a family into generator settings: the C++ engine and the shared Pythia
+    /// driver write the cards.</summary>
+    public enum Channel { SingleBoson, BosonPair, BosonExchange, Qcd, Photoproduction, Soft, Annihilation, NeutralCurrent, ChargedCurrent, Inclusive }
+
+    /// <summary>What an engine older than 1.3 can read.</summary>
+    public static readonly Channel[] Legacy = { Channel.SingleBoson, Channel.BosonPair, Channel.BosonExchange, Channel.Qcd, Channel.Photoproduction, Channel.Soft };
 
     public int[] Beams { get; set; } = Array.Empty<int>();
     public double[] BeamEnergies { get; set; } = Array.Empty<double>();
     public int[] FinalState { get; set; } = Array.Empty<int>();
     public Dictionary<string, int> CouplingOrders { get; set; } = new(StringComparer.Ordinal);
     public double? MinimumPT { get; set; }
+    /// <summary>Minimum momentum transfer Q² = −t in GeV² for the t-channel scatterings (<c>NeutralCurrent</c>,
+    /// <c>ChargedCurrent</c>, and those <c>Inclusive</c> opens); null lets the engine choose what a detector sees.</summary>
+    public double? MinimumQ2 { get; set; }
     public string Model { get; set; } = "SM";
 
     /// <summary>The three below arrived after job folders had already been saved, so each is optional on reading:
@@ -211,6 +222,18 @@ public sealed class MCCapabilities
     public string EngineVersion { get; set; } = "";
     public List<MCJob.Generator> Generators { get; set; } = new();
     public Dictionary<string, string> Versions { get; set; } = new(StringComparer.Ordinal);
+    /// <summary>The families each generator can open as a machine (the Machine source of Génération), by the
+    /// generator's raw name. Only the engine knows what its generators implement; absent from an engine older than
+    /// 1.3, see <see cref="MachineChannels"/>.</summary>
+    public Dictionary<string, MCProcess.Channel[]>? ColliderChannels { get; set; }
+
+    /// <summary>What a generator can open as a machine. An engine that does not say is older than 1.3: what 1.2 could
+    /// do is assumed, Pythia 8 and its six families.</summary>
+    public MCProcess.Channel[] MachineChannels(MCJob.Generator generator)
+    {
+        if (ColliderChannels is { } table) return table.TryGetValue(MCJob.RawValue(generator), out var c) ? c : Array.Empty<MCProcess.Channel>();
+        return generator == MCJob.Generator.Pythia8 && Generators.Contains(MCJob.Generator.Pythia8) ? MCProcess.Legacy : Array.Empty<MCProcess.Channel>();
+    }
 }
 
 /// <summary>Reads and writes a job folder: TreeLevel fills it, the engine consumes it and writes back.</summary>
@@ -233,7 +256,14 @@ public sealed class MCJobFolder
 
     public MCStatus? ReadStatus()
     {
-        try { return File.Exists(StatusPath) ? JsonSerializer.Deserialize<MCStatus>(File.ReadAllText(StatusPath), MCEngineProtocol.JsonOptions) : null; }
+        // Opened sharing everything: the engine replaces the file while it is read, and a reader that shared less
+        // would make that replacement fail.
+        try
+        {
+            if (!File.Exists(StatusPath)) return null;
+            using var stream = new FileStream(StatusPath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return JsonSerializer.Deserialize<MCStatus>(stream, MCEngineProtocol.JsonOptions);
+        }
         catch (Exception) { return null; }
     }
 }
