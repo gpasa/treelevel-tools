@@ -185,6 +185,11 @@ step_herwig() {
 
 step_sherpa() {
   local d; d=$(unpack sherpa-v3.0.5.tar.gz)
+  # Sherpa télécharge et construit sa propre libzip, qui ramassait au passage zstd, bzip2, lzma et zlib du
+  # gestionnaire de paquets (MacPorts ici, Homebrew sur l'iMac) — des bibliothèques pour macOS 26. On lui
+  # interdit leurs préfixes et zstd : bzip2, lzma et zlib viennent alors du système.
+  perl -pi -e 's{-DBUILD_REGRESS=OFF}{-DBUILD_REGRESS=OFF -DENABLE_ZSTD=OFF -DENABLE_OPENSSL=OFF -DENABLE_GNUTLS=OFF -DENABLE_MBEDTLS=OFF -DCMAKE_IGNORE_PREFIX_PATH=/opt/local|/usr/local|/opt/homebrew\n    LIST_SEPARATOR |}' "$d/CMakeLists.txt"
+  grep -q "ENABLE_ZSTD=OFF" "$d/CMakeLists.txt" || { echo "le correctif de la libzip de Sherpa n'a pas pris" >&2; exit 1; }
   run sherpa cmake -S "$d" -B "$d/build" "${CMAKE_COMMON[@]}" -DCMAKE_INSTALL_PREFIX="$SH" \
       -DCMAKE_Fortran_COMPILER="$FC" \
       -DSHERPA_ENABLE_LHAPDF=ON -DLHAPDF_DIR="$HW" \
