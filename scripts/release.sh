@@ -5,7 +5,7 @@
 #   scripts/release.sh                 build, sign, notarise, staple, make the disk image
 #   scripts/release.sh 0.2.0           the same, with that version number
 #   scripts/release.sh --no-notarize   stop after signing (offline check of the build)
-#   scripts/release.sh --upload        also create the GitLab release (needs the two variables below)
+#   scripts/release.sh --upload        also create the GitHub release mac-<version> (gh authenticated)
 #
 # Prerequisites, done once:
 #   • a "Developer ID Application" certificate in the keychain (Xcode › Settings › Accounts › Manage Certificates)
@@ -178,7 +178,11 @@ ls -lh "$OUT" | sed 's/^/  /'
 if [ "$UPLOAD" = 1 ]; then
   say "Publication"
   command -v gh >/dev/null || { echo "gh n'est pas installé" >&2; exit 1; }
-  gh release create "v$VERSION" --title "TreeLevel Tools $VERSION" \
+  # Les releases du dépôt portent leur plateforme : mac-<version> ici, win-<version> pour Windows. Le tag naît
+  # sur le commit d'où le paquet a été construit, qui doit être poussé.
+  git push -q origin HEAD
+  gh release create "mac-$VERSION" --target "$(git rev-parse HEAD)" --latest \
+     --title "TreeLevel Tools $VERSION — macOS" \
      --notes-file "$OUT/release-notes.md" "$OUT"/*.dmg "$OUT"/*.zip "$OUT/SHA256SUMS.txt" \
-     && echo "  release v$VERSION créée"
+     && echo "  release mac-$VERSION créée"
 fi
