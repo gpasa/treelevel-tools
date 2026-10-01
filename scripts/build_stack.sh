@@ -38,6 +38,9 @@ CH="$ROOT/calchep3"          # CalcHEP se construit en place : le dossier est le
 JOBS=$(sysctl -n hw.ncpu)
 
 export MACOSX_DEPLOYMENT_TARGET=13.0
+# CMake 4 refuse les projets qui déclarent un minimum < 3.5. La variable d'environnement atteint aussi les
+# sous-constructions que Sherpa télécharge (libzip), que l'option de ligne de commande n'atteint pas.
+export CMAKE_POLICY_VERSION_MINIMUM=3.5
 export SDKROOT=$(xcrun --show-sdk-path)
 # Les outils de construction, pas les bibliothèques : Homebrew sur l'iMac, MacPorts ici.
 export PATH="$WORK/bin:/usr/local/bin:/opt/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
