@@ -108,10 +108,12 @@ fi
 say "Architectures et version minimale"
 BAD_BIN=""
 while IFS= read -r -d '' f; do
-  case "$(file -b "$f")" in *Mach-O*) ;; *) continue ;; esac
+  # Les objets .o de CalcHEP sont séparés exprès par architecture (la notarisation refuse un .o universel) ;
+  # ld_n choisit celui de la machine.
+  case "$(file -b "$f")" in *"Mach-O"*object*) continue ;; *Mach-O*) ;; *) continue ;; esac
   lipo "$f" -verify_arch arm64 x86_64 2>/dev/null || BAD_BIN="$BAD_BIN
   pas universel   ${f#$APP/}"
-  for v in $(vtool -show-build "$f" 2>/dev/null | awk '/minos/{print $2}'); do
+  for v in $(vtool -show-build "$f" 2>/dev/null | awk '$1=="minos"{print $2}'); do
     [ "$(printf '%s\n13.0\n' "$v" | sort -V | tail -1)" = "13.0" ] || BAD_BIN="$BAD_BIN
   macOS $v requis   ${f#$APP/}"
   done
@@ -187,7 +189,7 @@ même travail donne la même carte au Mac et sous Linux.
 **WHIZARD 3** n'y est pas : il compile chaque processus avec gfortran, que ni macOS ni Xcode ne fournissent.
 Deux façons de l'avoir, à cocher dans la fenêtre de TreeLevel Tools :
 
-- l'**image Docker** \`ghcr.io/gpasa/treelevel-tools:$VERSION\`, qui porte les cinq outils ; cochée, elle mène
+- l'**image Docker** \`ghcr.io/gpasa/treelevel-tools:latest\`, qui porte les cinq outils ; cochée, elle mène
   **tous** les travaux, et les générateurs livrés ici se taisent ;
 - votre **propre installation** (MacPorts, Homebrew), si vous en avez une.
 

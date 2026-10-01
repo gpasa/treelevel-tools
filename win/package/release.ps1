@@ -100,7 +100,7 @@ Herwig 7, Sherpa 3, WHIZARD 3 et CalcHEP 3
 ------------------------------------------
 Ils n'existent pas pour Windows et arrivent dans une image de conteneur, avec Docker Desktop :
 
-    docker pull ghcr.io/gpasa/treelevel-tools:$version
+    docker pull ghcr.io/gpasa/treelevel-tools:latest
 
 Dans les Réglages de TreeLevel, la case « Tout faire tourner dans l'image Docker » y envoie
 aussi Pythia ; sans elle, Pythia tourne ici, en natif.

@@ -176,7 +176,9 @@ enum Installation {
     static func image() -> String {
         if let set = ProcessInfo.processInfo.environment["TREELEVEL_MC_IMAGE"]?
             .trimmingCharacters(in: .whitespacesAndNewlines), !set.isEmpty { return set }
-        return "ghcr.io/gpasa/treelevel-tools:" + MCEngineProtocol.toolsVersion
+        // « latest » : l'image garde la compatibilité avec les travaux de la 0.4.0 (protocole 2) dans toutes ses
+        // versions suivantes ; TreeLevel 1.3 profite donc de chaque nouvelle image sans attendre d'outil neuf.
+        return "ghcr.io/gpasa/treelevel-tools:latest"
     }
 
     /// Docker — ou Podman —, mais seulement quand son démon répond. L'application s'installe longtemps avant
@@ -205,12 +207,12 @@ enum Installation {
     /// du Mac : une seule voie, qu'il sait, plutôt qu'un mélange selon le générateur.
     static func container() -> (docker: URL, image: String)? {
         guard let docker else { return nil }
-        // L'étiquette que le protocole partagé désigne, puis « latest » : refuser une image présente pour un
-        // chiffre serait absurde. Un réglage explicite, lui, n'est pas contourné.
+        // « latest » d'abord, puis l'étiquette de cette version-ci, pour qui ne l'a tirée que sous son numéro :
+        // refuser une image présente pour un chiffre serait absurde. Un réglage explicite n'est pas contourné.
         let pinned = MCEngineProtocol.toolsVersion
         var tags = [image()]
         if ProcessInfo.processInfo.environment["TREELEVEL_MC_IMAGE"] == nil {
-            tags.append("ghcr.io/gpasa/treelevel-tools:latest")
+            tags.append("ghcr.io/gpasa/treelevel-tools:" + pinned)
             // L'image s'est appelée « treelevel-mc-engine » jusqu'à l'arrivée de Delphes, qui n'est pas un
             // générateur. Celui qui l'a déjà tirée sous ce nom-là n'a pas à la retirer.
             tags.append("ghcr.io/gpasa/treelevel-mc-engine:" + pinned)

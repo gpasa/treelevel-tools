@@ -5,7 +5,7 @@ construire à la main demande une soirée à qui voulait seulement gerber quelqu
 déjà construits, avec le moteur lui-même, et TreeLevel n'a plus qu'à tendre un dossier de travail :
 
 ```
-docker run --rm -v "<dossier>:/job" ghcr.io/gpasa/treelevel-tools:<version> run /job
+docker run --rm -v "<dossier>:/job" ghcr.io/gpasa/treelevel-tools:latest run /job
 ```
 
 Le moteur qui tourne dedans est le moteur C++ de `Backends/engine`, celui-là même que TreeLevel Tools embarque au
@@ -16,18 +16,45 @@ ne passe par le réseau.
 ## Pour l'utilisateur
 
 ```powershell
-docker pull ghcr.io/gpasa/treelevel-tools:0.4.0
+docker pull ghcr.io/gpasa/treelevel-tools:latest
 ```
 
 C'est tout — TreeLevel voit alors les cinq générateurs apparaître dans sa liste (au Mac, une fois cochée la case
 « tout faire tourner dans l'image Docker » de TreeLevel Tools : l'image mène alors tous les travaux). TreeLevel
-Tools 0.3.x, sous Windows, demande encore l'image `0.3.0`, qui reste publiée. L'image n'est
+Tools 0.3.x (TreeLevel 1.2) demande encore l'image `0.3.0`, qui reste publiée ; à partir de TreeLevel 1.3 et
+TreeLevel Tools 0.4.0, c'est `latest`, sur le Mac comme sous Windows. L'image n'est
 **jamais** tirée sans qu'on le demande : le moteur regarde si elle est là (`docker image inspect`), et si elle
 n'y est pas, il ne propose rien plutôt que de lancer un téléchargement d'un gigaoctet dans le dos de quelqu'un.
 
 Il faut Docker Desktop (ou Podman, ou Rancher Desktop) et, sous Windows, la virtualisation activée — elle l'est
 d'origine sur une machine réelle. Dans une machine virtuelle, il faut que l'hôte expose la virtualisation
 imbriquée : sur un Mac, cela veut dire une puce M3 ou M4 avec Parallels 19+.
+
+## Compatibilité : une nouvelle image ne casse jamais TreeLevel 1.3
+
+TreeLevel 1.3 et TreeLevel Tools 0.4.0 demandent l'image `latest`. Celle-ci change sous leurs pieds : une image
+0.9.0 ou 12.0.0, publiée des années plus tard, sera tirée par un Mac qui porte encore la 1.3. **Toute image doit
+donc continuer de mener les travaux de la 0.4.0**, et la règle vaut pour chaque image à venir :
+
+- le protocole 2 reste accepté : `job.json` tel que la 0.4.0 l'écrit, avec ses champs et leur sens. On peut en
+  *ajouter* (optionnels, avec un défaut qui reproduit l'ancien comportement), jamais en retirer, en renommer ou
+  en changer le sens. Un protocole plus récent s'ajoute à côté, il ne remplace pas le 2 ;
+- l'appel ne change pas : `docker run --rm -v <dossier>:/job <image> run /job`, et `… <image> capabilities`
+  rend un JSON qui garde ses clés (`engineVersion`, `generators`, `versions`…) ;
+- le moteur laisse dans le dossier ce que la 0.4.0 lit : `status.json` (mêmes états, mêmes champs),
+  `engine.log` et le fichier de sortie nommé dans le travail (`events.hepmc`) ;
+- un générateur que la 0.4.0 connaissait (`pythia8`, `herwig7`, `sherpa3`, `whizard3`, `calchep3`) reste
+  dans l'image.
+
+Avant de pousser une image sous `latest` :
+
+```bash
+scripts/test_image_compat.sh ghcr.io/gpasa/treelevel-tools:<nouvelle version>
+```
+
+Il fait tourner les travaux figés de `docker/compat-0.4.0/` (Pythia, Herwig, Sherpa, CalcHEP et la source
+Machine, protocole 2, tels que la 0.4.0 les écrit) exactement comme la 0.4.0 lance l'image. Ces travaux ne se
+mettent **jamais** à jour : ils sont la 0.4.0. Un échec veut dire pas de `latest` — on corrige l'image, pas le test.
 
 ## Ce que l'image contient
 
@@ -67,7 +94,7 @@ vérifie en une commande, avec le travail d'essai que porte le dépôt :
 
 ```bash
 cd docker/test-job
-docker run --rm -v "$PWD:/job" ghcr.io/gpasa/treelevel-tools:0.4.0 run /job && cat status.json
+docker run --rm -v "$PWD:/job" ghcr.io/gpasa/treelevel-tools:latest run /job && cat status.json
 ```
 
 Attendu : `state` à `finished`, `eventsWritten` à 200, `crossSection` toujours 3.11399 — le générateur gerbe et
@@ -90,7 +117,7 @@ Distribuer ces binaires oblige à publier les sources correspondantes. Elles le 
 3. le moteur lui-même est dans ce dépôt, sous GPL v3.
 
 ```bash
-docker run --rm --entrypoint cat ghcr.io/gpasa/treelevel-tools:0.4.0 \
+docker run --rm --entrypoint cat ghcr.io/gpasa/treelevel-tools:latest \
   /opt/treelevel-tools/share/treelevel-tools/SOURCES.txt
 ```
 
@@ -139,7 +166,7 @@ radiatives resserreraient. Mais qui compare sans le savoir croira à une erreur 
 ## Sous Linux : lancez le conteneur sous votre identité
 
 ```bash
-docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/job" ghcr.io/gpasa/treelevel-tools:0.4.0 run /job
+docker run --rm --user "$(id -u):$(id -g)" -v "$PWD:/job" ghcr.io/gpasa/treelevel-tools:latest run /job
 ```
 
 Sans `--user`, le conteneur écrit en **root** dans le dossier monté, et vous ne pouvez plus effacer ce qui en

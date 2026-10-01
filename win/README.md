@@ -96,7 +96,7 @@ ThePEG, sur autotools et sur du Fortran ; WHIZARD et CalcHEP compilent chaque pr
 un conteneur Linux, que l'utilisateur récupère d'une commande :
 
 ```powershell
-docker pull ghcr.io/gpasa/treelevel-tools:0.4.0
+docker pull ghcr.io/gpasa/treelevel-tools:latest
 ```
 
 Le moteur qui tourne dans l'image est **le même source** que `treelevel-engine.exe`, compilé pour Linux : il
