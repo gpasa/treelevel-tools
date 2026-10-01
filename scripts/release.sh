@@ -60,9 +60,13 @@ mkdir -p "$OUT"
 
 # --- Build ------------------------------------------------------------------
 say "Command line tool"
-/usr/bin/swift build -c release
+# Universels, comme l'application : un iMac Intel les exécute aussi (la 0.4.0 publiée d'abord ne les
+# avait qu'en arm64 — rien ne tournait sur Intel).
+/usr/bin/swift build -c release --arch arm64 --arch x86_64
+BIN=.build/apple/Products/Release
 # Le moteur C++ : les cartes de tous les générateurs, les mêmes que dans l'image Linux.
-/usr/bin/clang++ -O2 -std=c++17 -I Backends/pythia Backends/engine/engine.cpp -o .build/release/treelevel-engine
+/usr/bin/clang++ -O2 -std=c++17 -arch arm64 -arch x86_64 -mmacosx-version-min=14.0 -I Backends/pythia \
+  Backends/engine/engine.cpp -o "$BIN/treelevel-engine"
 say "Application"
 (cd App && xcodegen generate >/dev/null)
 xcodebuild -project App/TreeLevelMCEngine.xcodeproj -scheme TreeLevelMCEngine -configuration Release \
@@ -71,8 +75,11 @@ APP_SRC="App/build/Build/Products/Release/TreeLevel Tools.app"
 [ -d "$APP_SRC" ] || { echo "the application was not built" >&2; exit 1; }
 APP="$OUT/TreeLevel Tools.app"
 cp -R "$APP_SRC" "$APP"
-cp .build/release/treelevel-tools "$APP/Contents/MacOS/treelevel-tools"
-cp .build/release/treelevel-engine "$APP/Contents/MacOS/treelevel-engine"
+cp "$BIN/treelevel-tools" "$APP/Contents/MacOS/treelevel-tools"
+cp "$BIN/treelevel-engine" "$APP/Contents/MacOS/treelevel-engine"
+for f in "$APP/Contents/MacOS/"*; do
+  lipo "$f" -verify_arch arm64 x86_64 || { echo "$f n'est pas universel" >&2; exit 1; }
+done
 
 # --- Modules -----------------------------------------------------------------
 # L'utilisateur n'installe qu'une application : les générateurs voyagent dedans. Ils ont été rendus
