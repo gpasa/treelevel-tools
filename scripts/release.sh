@@ -65,7 +65,7 @@ say "Command line tool"
 /usr/bin/swift build -c release --arch arm64 --arch x86_64
 BIN=.build/apple/Products/Release
 # Le moteur C++ : les cartes de tous les générateurs, les mêmes que dans l'image Linux.
-/usr/bin/clang++ -O2 -std=c++17 -arch arm64 -arch x86_64 -mmacosx-version-min=14.0 -I Backends/pythia \
+/usr/bin/clang++ -O2 -std=c++17 -arch arm64 -arch x86_64 -mmacosx-version-min=13.0 -I Backends/pythia \
   Backends/engine/engine.cpp -o "$BIN/treelevel-engine"
 say "Application"
 (cd App && xcodegen generate >/dev/null)
@@ -101,6 +101,27 @@ if [ -d "$MODULES_SRC" ]; then
 else
   echo "  (aucun module : scripts/package_module.sh n'a pas tourné)"
 fi
+
+# Chaque binaire embarqué doit tourner sur les deux architectures et dès macOS 13, comme l'application. La
+# première 0.4.0 est partie avec des générateurs arm64 seulement, et liés à des bibliothèques qui exigeaient
+# macOS 26 : rien ne le disait, et un iMac Intel n'avait que CalcHEP, qui échouait au premier travail.
+say "Architectures et version minimale"
+BAD_BIN=""
+while IFS= read -r -d '' f; do
+  case "$(file -b "$f")" in *Mach-O*) ;; *) continue ;; esac
+  lipo "$f" -verify_arch arm64 x86_64 2>/dev/null || BAD_BIN="$BAD_BIN
+  pas universel   ${f#$APP/}"
+  for v in $(vtool -show-build "$f" 2>/dev/null | awk '/minos/{print $2}'); do
+    [ "$(printf '%s\n13.0\n' "$v" | sort -V | tail -1)" = "13.0" ] || BAD_BIN="$BAD_BIN
+  macOS $v requis   ${f#$APP/}"
+  done
+done < <(find "$APP/Contents" -type f -print0)
+if [ -n "$BAD_BIN" ]; then
+  echo "  ⚠ binaires qui ne tourneraient pas partout :" >&2
+  printf '%s\n' "$BAD_BIN" | grep -v '^$' | sort -u | head -30 >&2
+  exit 1
+fi
+echo "  tout est universel et vise macOS 13"
 
 # --- Sign -------------------------------------------------------------------
 # Nested binaries first, then the bundle; hardened runtime and a secure timestamp, both required for notarisation.
@@ -151,6 +172,7 @@ cat > "$OUT/release-notes.md" <<NOTES
 Les outils sous licence GPL que TreeLevel ne peut pas contenir, sur votre machine — rien ne sort d'ici.
 TreeLevel est sandboxé et ne lance aucun programme ; ce paquet est ce qui a le droit de les exécuter.
 
+- Pour Mac **Apple Silicon et Intel**, macOS 13 ou plus récent.
 - Glisser \`TreeLevel Tools.app\` dans \`/Applications\`, la lancer une fois.
 - Quatre générateurs sont **déjà dedans**, rien d'autre à installer :
   - **Pythia 8** et **Herwig 7** habillent les événements de TreeLevel entre deux leptons : gerbe,

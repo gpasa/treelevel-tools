@@ -224,6 +224,10 @@ PYEOF2
   # Xcode, et non le gcc de MacPorts, qui ne part pas avec nous.
   for f in "$STAGE/FlagsForMake" "$STAGE/FlagsForSh"; do
     [ -f "$f" ] && /usr/bin/sed -i '' "s|/opt/local/bin/gcc-mp-15|cc|g; s|/opt/local/bin/gfortran-mp-15|gfortran|g" "$f"
+    # Et sans architecture imposée : la construction a écrit « -arch arm64 » (ou x86_64) dans ces drapeaux.
+    # Gardé, il ferait compiler sur un Mac Intel un processus arm64 qu'il ne pourrait pas exécuter ; sans lui,
+    # cc compile pour la machine où il tourne, et les bibliothèques universelles du module conviennent.
+    [ -f "$f" ] && /usr/bin/sed -i '' -E "s/ ?-arch (arm64|x86_64)//g" "$f"
   done
 fi
 
