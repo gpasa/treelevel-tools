@@ -8,7 +8,9 @@
 #   scripts/release.sh --upload        also create the GitHub release mac-<version> (gh authenticated)
 #
 # Prerequisites, done once:
-#   • a "Developer ID Application" certificate in the keychain (Xcode › Settings › Accounts › Manage Certificates)
+#   • a "Developer ID Application" certificate of the G2 authority in the keychain — from the developer site,
+#     choosing "G2 Sub-CA" (Xcode › Manage Certificates › + issues one from the previous authority, which
+#     stops on 1 February 2027); scripts/devid_identity.sh finds it
 #   • notarisation credentials:  xcrun notarytool store-credentials "TreeLevelMC" \
 #         --apple-id <apple id> --team-id 9LVGAJ594U --password <app-specific password>
 set -euo pipefail

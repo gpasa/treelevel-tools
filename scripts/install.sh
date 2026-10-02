@@ -19,10 +19,10 @@ rm -rf "$DEST"
 /usr/bin/ditto "App/build/Build/Products/Release/TreeLevel Tools.app" "$DEST"
 cp .build/release/treelevel-tools "$DEST/Contents/MacOS/treelevel-tools"
 cp .build/release/treelevel-engine "$DEST/Contents/MacOS/treelevel-engine"
-if security find-identity -v -p codesigning | grep -q "Developer ID Application"; then
-  codesign --force --timestamp --options runtime --sign "Developer ID Application" "$DEST/Contents/MacOS/treelevel-tools"
-  codesign --force --timestamp --options runtime --sign "Developer ID Application" "$DEST/Contents/MacOS/treelevel-engine"
-  codesign --force --timestamp --options runtime --sign "Developer ID Application" "$DEST"
+if ID=$(scripts/devid_identity.sh 2>/dev/null); then
+  codesign --force --timestamp --options runtime --sign "$ID" "$DEST/Contents/MacOS/treelevel-tools"
+  codesign --force --timestamp --options runtime --sign "$ID" "$DEST/Contents/MacOS/treelevel-engine"
+  codesign --force --timestamp --options runtime --sign "$ID" "$DEST"
   codesign --verify --strict "$DEST"
 fi
 touch "$DEST"
