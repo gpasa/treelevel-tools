@@ -107,6 +107,9 @@ public sealed class MCJob
     public bool Shower { get; set; } = true;
     public bool Hadronisation { get; set; } = true;
     public bool MultipleInteractions { get; set; }
+    /// <summary>Positions in the interaction zone (femtometres): partonic interactions and hadron birthplaces, as the
+    /// generator models them. Optional, so that a job folder written before it still reads; null means off.</summary>
+    public bool? SpaceTime { get; set; }
     public bool Decays { get; set; } = true;
     public string? Tune { get; set; }
     public string? ExtraSettings { get; set; }
@@ -226,6 +229,9 @@ public sealed class MCCapabilities
     /// generator's raw name. Only the engine knows what its generators implement; absent from an engine older than
     /// 1.3, see <see cref="MachineChannels"/>.</summary>
     public Dictionary<string, MCProcess.Channel[]>? ColliderChannels { get; set; }
+    /// <summary>The generators that can place partons and hadrons in the interaction zone (the job's <c>spaceTime</c> key), by
+    /// raw name. Absent from an engine older than 1.4: none.</summary>
+    public List<string>? SpaceTimeGenerators { get; set; }
 
     /// <summary>What a generator can open as a machine. An engine that does not say is older than 1.3: what 1.2 could
     /// do is assumed, Pythia 8 and its six families.</summary>

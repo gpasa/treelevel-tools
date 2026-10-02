@@ -78,6 +78,10 @@ public static class Installation
     public static bool DriverWritesCards(string driver)
         => Run(driver, new[] { "--features" }).Output.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Contains("job");
 
+    /// <summary>Whether this driver places partons and hadrons in the interaction zone (<c>--features</c> says « spacetime »).</summary>
+    public static bool DriverKnowsSpaceTime(string driver)
+        => Run(driver, new[] { "--features" }).Output.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Contains("spacetime");
+
     /// <summary>« Pythia 8.318 », with where it came from when it is not our module; null when it does not answer.
     /// A file that exists is not a program that runs: a module whose files went missing must not be offered.</summary>
     public static string? PythiaVersion(string driver)
@@ -219,7 +223,7 @@ public static class Installation
     /// silence.</summary>
     public static MCCapabilities Capabilities(string engineVersion, bool dockerOnly)
     {
-        var caps = new MCCapabilities { EngineVersion = engineVersion, ColliderChannels = new() };
+        var caps = new MCCapabilities { EngineVersion = engineVersion, ColliderChannels = new(), SpaceTimeGenerators = new() };
         if (!dockerOnly)
         {
             caps.Generators.Add(MCJob.Generator.Passthrough);
@@ -229,6 +233,8 @@ public static class Installation
                 caps.Generators.Add(MCJob.Generator.Pythia8);
                 caps.Versions[key] = pythia;
                 caps.ColliderChannels[key] = Enum.GetValues<MCProcess.Channel>();
+                // The positions in the interaction zone: only if the installed driver knows them.
+                if (DriverKnowsSpaceTime(driver)) caps.SpaceTimeGenerators.Add(key);
             }
         }
         // Nothing is downloaded here: an image that is not on the machine simply offers nothing.
@@ -247,6 +253,7 @@ public static class Installation
                 // 1.2 could do.
                 var families = image.MachineChannels(generator);
                 if (families.Length > 0) caps.ColliderChannels[key] = families;
+                if (image.SpaceTimeGenerators?.Contains(key) == true) caps.SpaceTimeGenerators.Add(key);
             }
         }
         return caps;
