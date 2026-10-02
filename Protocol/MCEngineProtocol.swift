@@ -121,6 +121,9 @@ public struct MCJob: Codable, Equatable {
     public var hadronisation = true
     /// Multiple parton interactions — only meaningful for hadron beams.
     public var multipleInteractions = false
+    /// Positions in the interaction zone (femtometres): partonic interactions and hadron birthplaces, as the
+    /// generator models them. Optional, so that a job folder written before it still reads; nil means off.
+    public var spaceTime: Bool?
     /// Let the generator decay the unstable hadrons it produces.
     public var decays = true
     /// Tune or settings preset, generator-specific ("Monash", "default").
@@ -304,6 +307,9 @@ public struct MCCapabilities: Codable, Equatable {
     /// seul à savoir ce que ses générateurs implémentent, et l'app n'affiche que ce qu'on lui annonce.
     /// Absent chez un moteur antérieur à la 1.3 : voir `machineChannels(of:)`.
     public var colliderChannels: [String: [MCProcess.Channel]]? = nil
+    /// Les générateurs qui savent placer partons et hadrons dans la zone d'interaction (clé `spaceTime` du
+    /// travail), par nom brut. Absent chez un moteur antérieur à la 1.4 : aucun.
+    public var spaceTimeGenerators: [String]? = nil
     public init(engineVersion: String, generators: [MCJob.Generator]) {
         self.engineVersion = engineVersion
         self.generators = generators

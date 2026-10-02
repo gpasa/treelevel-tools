@@ -383,6 +383,13 @@ inline bool card(const Value& job, const std::string& part, int seedOffset, std:
   L.push_back(std::string("PartonLevel:ISR = ") + (shower ? "on" : "off"));
   L.push_back(std::string("PartonLevel:FSR = ") + (shower ? "on" : "off"));
   L.push_back(std::string("PartonLevel:MPI = ") + (job["multipleInteractions"].flag(false) || soft ? "on" : "off"));
+  // Les positions dans la zone d'interaction, à l'échelle du femtomètre : chaque interaction partonique placée
+  // dans le recouvrement des deux hadrons, chaque hadron là où sa corde s'est rompue. C'est le modèle du
+  // générateur, pas une mesure ; sans cette option, tout naît au point de collision.
+  if (job["spaceTime"].flag(false)) {
+    L.push_back("PartonVertex:setVertex = on");
+    L.push_back("Fragmentation:setVertices = on");
+  }
   L.push_back(std::string("HadronLevel:all = ") + (job["hadronisation"].flag(true) ? "on" : "off"));
   L.push_back(std::string("HadronLevel:Decay = ") + (job["decays"].flag(true) ? "on" : "off"));
   L.push_back("Print:quiet = on");

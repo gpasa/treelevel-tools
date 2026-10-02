@@ -326,6 +326,13 @@ enum Installation {
         // Ce que chacun sait faire en production inclusive. Le Pythia natif mène une machine avec les six
         // familles ; les autres modules natifs n'en mènent aucune — ils la gagneront par l'image.
         caps.colliderChannels = generators.contains(.pythia8) ? ["pythia8": MCProcess.Channel.allCases] : [:]
+        // Les positions dans la zone d'interaction : seulement si le pilote installé le sait (`--features`).
+        if let driver = pythiaDriver, generators.contains(.pythia8),
+           Process.output(driver, ["--features"], timeout: 10)?.split(whereSeparator: \.isWhitespace).contains("spacetime") == true {
+            caps.spaceTimeGenerators = ["pythia8"]
+        } else {
+            caps.spaceTimeGenerators = []
+        }
         return caps
     }
 
@@ -340,6 +347,7 @@ enum Installation {
         caps.generators = []
         caps.versions = [:]
         caps.colliderChannels = [:]
+        caps.spaceTimeGenerators = []
         guard let container = container(),
               let fromImage = imageCapabilities(container.docker, container.image) else { return caps }
         for generator in fromImage.generators {
@@ -349,6 +357,7 @@ enum Installation {
             // `machineChannels(of:)` retient alors ce que la 1.2 savait faire.
             let familles = fromImage.machineChannels(of: generator)
             if !familles.isEmpty { caps.colliderChannels?[generator.rawValue] = familles }
+            if fromImage.spaceTimeGenerators?.contains(generator.rawValue) == true { caps.spaceTimeGenerators?.append(generator.rawValue) }
         }
         return caps
     }

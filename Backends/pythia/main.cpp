@@ -118,6 +118,11 @@ public:
     std::vector<std::string> vertices;
     std::map<std::pair<int, int>, int> vertexOf;
     std::string particles;
+    // Ce qui porte une couleur — quarks, gluons, diquarks — reçoit son flux de couleur (attributs flow1, flow2,
+    // comme les écrit l'interface HepMC3 de Pythia) et son statut Pythia : de quoi relier les cordes de
+    // couleur et distinguer le processus dur, les interactions multiples, les gerbes et les partons qui
+    // entrent dans l'hadronisation. Un lecteur qui ne les connaît pas les ignore.
+    std::string attributes;
     auto position = [](const Pythia8::Vec4& v) {
       if (v.px() == 0 && v.py() == 0 && v.pz() == 0 && v.e() == 0) return std::string();
       // Pythia : vProd() en mm, temps en mm/c ; HepMC : @ x y z t, dans la même unité (U GEV MM).
@@ -152,6 +157,11 @@ public:
       particles += "P " + std::to_string(i) + " " + std::to_string(parent) + " " + std::to_string(p.id()) + " ";
       particles += number_(p.px()) + " " + number_(p.py()) + " " + number_(p.pz()) + " " + number_(p.e()) + " "
                  + number_(p.m()) + " " + std::to_string(status) + "\n";
+      if (p.col() > 0 || p.acol() > 0) {
+        if (p.col() > 0) attributes += "A " + std::to_string(i) + " flow1 " + std::to_string(p.col()) + "\n";
+        if (p.acol() > 0) attributes += "A " + std::to_string(i) + " flow2 " + std::to_string(p.acol()) + "\n";
+        attributes += "A " + std::to_string(i) + " pythia_status " + std::to_string(std::abs(p.status())) + "\n";
+      }
     }
     out << "E " << number << " " << vertices.size() << " " << n << "\n";
     out << "U GEV MM\n";
@@ -171,7 +181,7 @@ public:
       const double error = (errorPb > 0 && errorPb < crossSectionPb) ? errorPb : 0.0;
       out << "A 0 GenCrossSection " << number_(crossSectionPb) << " " << number_(error) << " -1 -1\n";
     }
-    out << particles;
+    out << particles << attributes;
   }
 
 private:
@@ -193,7 +203,8 @@ int main(int argc, char* argv[]) {
     std::string a = argv[i];
     if (a == "--version") { std::cout << PYTHIA_VERSION << std::endl; return 0; }
     // Ce que ce pilote sait faire, pour qu'un hôte sache s'il peut lui confier la carte.
-    if (a == "--features") { std::cout << "job" << std::endl; return 0; }
+    // « spacetime » : il sait placer partons et hadrons dans la zone d'interaction (clé spaceTime du travail).
+    if (a == "--features") { std::cout << "job spacetime" << std::endl; return 0; }
     if (a == "--config" && i + 1 < argc) config = argv[++i];
     else if (a == "--out" && i + 1 < argc) out = argv[++i];
     else if (a == "--job" && i + 1 < argc) jobPath = argv[++i];
