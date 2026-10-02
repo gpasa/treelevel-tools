@@ -168,11 +168,13 @@ public:
       particles += "P " + std::to_string(i) + " " + std::to_string(parent) + " " + std::to_string(p.id()) + " ";
       particles += number_(p.px()) + " " + number_(p.py()) + " " + number_(p.pz()) + " " + number_(p.e()) + " "
                  + number_(p.m()) + " " + std::to_string(status) + "\n";
-      if (p.col() > 0 || p.acol() > 0) {
-        if (p.col() > 0) attributes += "A " + std::to_string(i) + " flow1 " + std::to_string(p.col()) + "\n";
-        if (p.acol() > 0) attributes += "A " + std::to_string(i) + " flow2 " + std::to_string(p.acol()) + "\n";
-        attributes += "A " + std::to_string(i) + " pythia_status " + std::to_string(std::abs(p.status())) + "\n";
-      }
+      if (p.col() > 0) attributes += "A " + std::to_string(i) + " flow1 " + std::to_string(p.col()) + "\n";
+      if (p.acol() > 0) attributes += "A " + std::to_string(i) + " flow2 " + std::to_string(p.acol()) + "\n";
+      // Le statut : pour ce qui porte une couleur, et pour tout le processus dur (21 à 29) — les e⁺e⁻ incidents
+      // d'une machine à leptons n'en portent pas, et il faut pourtant les reconnaître.
+      const int st = std::abs(p.status());
+      if (p.col() > 0 || p.acol() > 0 || (st >= 21 && st <= 29))
+        attributes += "A " + std::to_string(i) + " pythia_status " + std::to_string(st) + "\n";
     }
     out << "E " << number << " " << vertices.size() << " " << n << "\n";
     out << "U GEV MM\n";
