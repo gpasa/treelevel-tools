@@ -15,7 +15,9 @@ PREFIX=${2:?préfixe construit}
 VERSION=${3:?version}
 NOTARIZE=1
 [ "${4:-}" = "--no-notarize" ] && NOTARIZE=0
-IDENTITY=${IDENTITY:-"Developer ID Application"}
+# L'identité de l'autorité G2, désignée par son empreinte : plusieurs certificats portent le même nom (ceux de
+# l'ancienne autorité cessent le 1ᵉʳ février 2027), et codesign refuse un nom ambigu. IDENTITY=… la remplace.
+IDENTITY=${IDENTITY:-$(scripts/devid_identity.sh)}
 PROFILE=${NOTARY_PROFILE:-TreeLevelMC}
 
 OUT="$(pwd)/build/modules"

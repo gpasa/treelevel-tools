@@ -14,7 +14,9 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-IDENTITY=${IDENTITY:-"Developer ID Application"}
+# L'identité de l'autorité G2, désignée par son empreinte : plusieurs certificats portent le même nom (ceux de
+# l'ancienne autorité cessent le 1ᵉʳ février 2027), et codesign refuse un nom ambigu. IDENTITY=… la remplace.
+IDENTITY=${IDENTITY:-$(scripts/devid_identity.sh)}
 PROFILE=${NOTARY_PROFILE:-TreeLevelMC}
 NOTARIZE=1
 UPLOAD=0
