@@ -389,6 +389,10 @@ inline bool card(const Value& job, const std::string& part, int seedOffset, std:
   if (job["spaceTime"].flag(false)) {
     L.push_back("PartonVertex:setVertex = on");
     L.push_back("Fragmentation:setVertices = on");
+    // Avec ces positions, Pythia 8.318 décale les hadrons de la zone lumineuse une seconde fois : les partons
+    // le sont avant l'hadronisation, et les hadrons nés d'eux le sont encore. Le pilote place donc lui-même
+    // l'événement, d'un bloc, avec les mêmes largeurs (main.cpp, « ownSpread ») ; Pythia ne le fait plus.
+    L.push_back("Beams:allowVertexSpread = off");
   }
   L.push_back(std::string("HadronLevel:all = ") + (job["hadronisation"].flag(true) ? "on" : "off"));
   L.push_back(std::string("HadronLevel:Decay = ") + (job["decays"].flag(true) ? "on" : "off"));

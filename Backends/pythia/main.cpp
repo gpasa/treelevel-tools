@@ -117,6 +117,7 @@ public:
     const int n = event.size() - 1;
     std::vector<std::string> vertices;
     std::map<std::pair<int, int>, int> vertexOf;
+    std::map<std::pair<int, int>, Pythia8::Vec4> vertexAt;   // where each vertex was written
     std::string particles;
     // Ce qui porte une couleur — quarks, gluons, diquarks — reçoit son flux de couleur (attributs flow1, flow2,
     // comme les écrit l'interface HepMC3 de Pythia) et son statut Pythia : de quoi relier les cordes de
@@ -141,6 +142,15 @@ public:
         const bool moved = (here - born).pAbs() > 1e-9 || std::abs(here.e() - born.e()) > 1e-9;
         if (auto found = vertexOf.find(key); found != vertexOf.end()) {
           parent = found->second;
+          // HepMC ne donne qu'un vertex de fin à une particule : tous les hadrons d'une corde partagent celui de
+          // ses partons. Quand Pythia les fait naître en des points distincts le long de la corde, chacun garde
+          // le sien par un attribut, que TreeLevel fait primer sur la position du vertex.
+          const Pythia8::Vec4 at = vertexAt[key];
+          if ((here - at).pAbs() > 0 || here.e() != at.e()) {
+            auto fine = [](double x) { char b[40]; snprintf(b, sizeof b, "%.15e", x); return std::string(b); };
+            attributes += "A " + std::to_string(i) + " production " + fine(here.px()) + " " + fine(here.py()) + " "
+                        + fine(here.pz()) + " " + fine(here.e()) + "\n";
+          }
         } else if (m2 > m1 || moved) {
           std::string list;
           for (int m = m1; m <= m2; ++m) list += (list.empty() ? "" : ",") + std::to_string(m);
@@ -150,6 +160,7 @@ public:
           particles += vertices.back();
           parent = -(int)vertices.size();
           vertexOf[key] = parent;
+          vertexAt[key] = here;
         } else {
           parent = m1;
         }
@@ -270,6 +281,19 @@ int main(int argc, char* argv[]) {
   if (!writer.good()) { std::cerr << "cannot write " << out << std::endl; return 1; }
 #endif
 
+  // La zone lumineuse placée par le pilote quand Pythia place partons et hadrons : un seul décalage, tiré comme
+  // Pythia le tire (gaussiennes de largeurs sigmaVertex, tronquées à maxDevVertex) et appliqué d'un bloc à toute
+  // l'entrée, après la génération. Voir JobCard.h.
+  const bool ownSpread = pythia.flag("Fragmentation:setVertices") && !pythia.flag("Beams:allowVertexSpread")
+                         && (pythia.parm("Beams:sigmaVertexX") > 0 || pythia.parm("Beams:sigmaVertexY") > 0
+                             || pythia.parm("Beams:sigmaVertexZ") > 0);
+  auto spread = [&pythia](double sigma) {
+    const double maxDev = pythia.parm("Beams:maxDevVertex");
+    double g;
+    do { g = pythia.rndm.gauss(); } while (maxDev > 0 && std::abs(g) > maxDev);
+    return sigma * g;
+  };
+
   const int requested = pythia.mode("Main:numberOfEvents");
   int written = 0, failures = 0;
   for (int i = 0; i < requested; ++i) {
@@ -277,6 +301,11 @@ int main(int argc, char* argv[]) {
       if (pythia.info.atEndOfFile()) break;         // the Les Houches file is exhausted
       if (++failures > requested / 10 + 10) { std::cerr << "too many failed events" << std::endl; break; }
       continue;
+    }
+    if (ownSpread) {
+      const Pythia8::Vec4 offset(spread(pythia.parm("Beams:sigmaVertexX")), spread(pythia.parm("Beams:sigmaVertexY")),
+                                 spread(pythia.parm("Beams:sigmaVertexZ")), 0.);
+      for (int k = 0; k < pythia.event.size(); ++k) pythia.event[k].vProdAdd(offset);
     }
 #ifdef TREELEVEL_WITH_HEPMC3
     toHepMC.writeNextEvent(pythia);
