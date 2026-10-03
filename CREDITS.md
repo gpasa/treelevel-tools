@@ -48,6 +48,6 @@ qui leur permet de continuer.
 WHIZARD, CalcHEP), [OCaml](https://ocaml.org) (O'Mega), [Emscripten](https://emscripten.org) (Pythia en
 WebAssembly pour l'iPad), [CMake](https://cmake.org) et Microsoft Visual C++ (Pythia et le moteur sous Windows).
 
-Versions livrées avec TreeLevel Tools 0.4.0 et l'image 0.4.0 : Pythia 8.318, Herwig 7.3.0 (ThePEG 2.3.0),
+Versions livrées avec TreeLevel Tools 0.5 et l'image 0.5.0 : Pythia 8.318, Herwig 7.3.0 (ThePEG 2.3.0),
 Sherpa 3.0.5, WHIZARD 3.1.6 (image seulement), CalcHEP 3.9.2, LHAPDF 6.5.3, HepMC3 3.2.5, FastJet 3.4.
 Le module de l'iPad porte Pythia 8.318 seul.

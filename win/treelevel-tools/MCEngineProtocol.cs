@@ -26,7 +26,7 @@ public static class MCEngineProtocol
     /// It was derived from each engine's own version before, and that let macOS pin one tag while Windows fell
     /// back to another — the same image today, and no guarantee tomorrow. Both engines are released together and
     /// carry this number in their project file too; when it moves, it moves everywhere.</summary>
-    public const string ToolsVersion = "0.4.0";
+    public const string ToolsVersion = "0.5.0";
 
     public const string JobFileName = "job.json";
     public const string InputFileName = "events.lhe";
