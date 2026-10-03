@@ -97,11 +97,11 @@ if [ "${2:-}" = "--upload" ]; then
     # shellcheck disable=SC2086
     gh release upload "$TAG" --repo "$REPO" --clobber $DATA
     gh release upload "$TAG" --repo "$REPO" --clobber "$OUT/module.json"
-    gh release edit "$TAG" --repo "$REPO" --title "Module Pythia pour TreeLevel sur iPad — $MODULE" --notes-file "$OUT/notes.md" --latest=false
+    gh release edit "$TAG" --repo "$REPO" --title "Module Pythia pour TreeLevel sur iPad — module $MODULE, Pythia $PYTHIA_VERSION" --notes-file "$OUT/notes.md" --latest=false
   else
     # shellcheck disable=SC2086
     gh release create "$TAG" --repo "$REPO" --target "$(git rev-parse HEAD)" --latest=false \
-       --title "Module Pythia pour TreeLevel sur iPad — $MODULE" --notes-file "$OUT/notes.md" $DATA "$OUT/module.json"
+       --title "Module Pythia pour TreeLevel sur iPad — module $MODULE, Pythia $PYTHIA_VERSION" --notes-file "$OUT/notes.md" $DATA "$OUT/module.json"
   fi
   echo "→ https://github.com/$REPO/releases/tag/$TAG"
 fi
