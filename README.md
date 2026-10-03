@@ -17,7 +17,7 @@ ne contient aucun de leur code.
 | système | télécharger | ce qu'il contient |
 |---|---|---|
 | **macOS** 13 ou plus récent, Apple Silicon et Intel | [TreeLevelTools-0.5.0.dmg](https://github.com/gpasa/treelevel-tools/releases/download/mac-0.5.0/TreeLevelTools-0.5.0.dmg) | Pythia 8, Herwig 7, Sherpa 3 et CalcHEP 3, prêts à tourner |
-| **Windows** 10 et 11 | [x64](https://github.com/gpasa/treelevel-tools/releases/download/win-0.4.0/TreeLevelTools-0.4.0-x64.zip) · [ARM64](https://github.com/gpasa/treelevel-tools/releases/download/win-0.4.0/TreeLevelTools-0.4.0-arm64.zip) | Pythia 8 ; les autres par l'image Docker |
+| **Windows** 10 et 11 | [x64](https://github.com/gpasa/treelevel-tools/releases/download/win-0.5.0/TreeLevelTools-0.5.0-x64.zip) · [ARM64](https://github.com/gpasa/treelevel-tools/releases/download/win-0.5.0/TreeLevelTools-0.5.0-arm64.zip) | Pythia 8 ; les autres par l'image Docker |
 | **iPad** | depuis les réglages de TreeLevel ([la release](https://github.com/gpasa/treelevel-tools/releases/tag/ipad-pythia-8.318)) | Pythia 8 en WebAssembly |
 | **Docker**, tous systèmes | `docker pull ghcr.io/gpasa/treelevel-tools:latest` | les cinq générateurs, WHIZARD 3 compris |
 
