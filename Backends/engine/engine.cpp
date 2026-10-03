@@ -62,7 +62,7 @@
 
 namespace {
 
-const char* kEngineVersion = "0.4.0";
+const char* kEngineVersion = "0.5.0";
 const int kProtocolVersion = 2;
 /// Where the image keeps its generators: $PREFIX, set by the Dockerfile, or the usual place.
 const std::string kPrefix = [] {
@@ -507,14 +507,24 @@ std::string calchepVersion(const std::string& root) {
   return b == std::string::npos ? "" : "CalcHEP " + header.substr(a + 1, b - a - 1);
 }
 
-struct Capabilities { std::vector<std::string> generators{"passthrough"}; std::map<std::string, std::string> versions; };
+struct Capabilities {
+  std::vector<std::string> generators{"passthrough"};
+  std::map<std::string, std::string> versions;
+  // Les générateurs qui placent les particules dans la zone d'interaction (clé de travail spaceTime) : Pythia,
+  // quand son pilote le dit à --features.
+  std::vector<std::string> spaceTimeGenerators;
+};
 
 Capabilities capabilities() {
   Capabilities c;
   const std::string driver = pythiaDriver();
   if (!driver.empty()) {
     auto [code, out] = capture({driver, "--version"});
-    if (code == 0 && !firstLine(out).empty()) { c.generators.push_back("pythia8"); c.versions["pythia8"] = "Pythia " + firstLine(out); }
+    if (code == 0 && !firstLine(out).empty()) {
+      c.generators.push_back("pythia8"); c.versions["pythia8"] = "Pythia " + firstLine(out);
+      auto [fcode, features] = capture({driver, "--features"});
+      if (fcode == 0 && (" " + features + " ").find("spacetime") != std::string::npos) c.spaceTimeGenerators.push_back("pythia8");
+    }
   }
   // A broken installation must not be offered, and the major version matters: a Sherpa 2 reads none of the YAML
   // written for a Sherpa 3.
@@ -558,6 +568,10 @@ std::string capabilitiesJSON(const Capabilities& c) {
     for (size_t k = 0; k < sizeof all / sizeof *all; ++k) o << (k ? ", " : "") << jsonString(all[k]);
     o << "]}";
   }
+  // Une clé que la 0.4.0 ne lit pas : elle l'ignore, et TreeLevel 1.3 avec elle.
+  o << ",\n  \"spaceTimeGenerators\" : [";
+  for (size_t k = 0; k < c.spaceTimeGenerators.size(); ++k) o << (k ? ", " : "") << jsonString(c.spaceTimeGenerators[k]);
+  o << "]";
   o << "\n}\n";
   return o.str();
 }
