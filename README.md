@@ -1,6 +1,6 @@
 # TreeLevel Tools
 
-🌐 **[This page in your language](https://treelevel.pasahome.org/installation/#outils)** — the TreeLevel site opens it in the language of your browser. Or unfold yours below: [Français](#lang-fr) · [Deutsch](#lang-de) · [Italiano](#lang-it) · [Español](#lang-es) · [Português (Brasil)](#lang-pt-br) · [Русский](#lang-ru) · [简体中文](#lang-zh-hans) · [日本語](#lang-ja) · [한국어](#lang-ko) · [हिन्दी](#lang-hi).
+🌐 **[This page in your language](https://treelevel.pasahome.org/outils/)** — the TreeLevel site opens it in the language of your browser. Or unfold yours below: [Français](#lang-fr) · [Deutsch](#lang-de) · [Italiano](#lang-it) · [Español](#lang-es) · [Português (Brasil)](#lang-pt-br) · [Русский](#lang-ru) · [简体中文](#lang-zh-hans) · [日本語](#lang-ja) · [한국어](#lang-ko) · [हिन्दी](#lang-hi).
 
 [Installation](#installation) · [The container](#the-other-way-the-container) · [Links and credits](#links-and-credits) · [Contents](#contents)
 

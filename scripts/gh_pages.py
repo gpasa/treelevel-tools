@@ -3,7 +3,7 @@
 
 GitHub runs no script: a page cannot choose its language by itself. Each page therefore opens in English, names the
 other languages at its head, and holds each of them in a block that unfolds; a link leads to the same text on the
-TreeLevel site, which the server serves in the reader's language.
+TreeLevel site (its page « outils », translated like the rest of the site), served in the reader's language.
 
   scripts/gh_pages.py readme                 README.md (and CREDITS.md) from docs/readme/
   scripts/gh_pages.py tools 0.5.0 [out.md]   the notes of the release mac-0.5.0, from docs/release-notes/0.5.0/
@@ -17,7 +17,7 @@ ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 LANGS = [("en", "English"), ("fr", "Français"), ("de", "Deutsch"), ("it", "Italiano"), ("es", "Español"),
          ("pt-BR", "Português (Brasil)"), ("ru", "Русский"), ("zh-Hans", "简体中文"), ("ja", "日本語"),
          ("ko", "한국어"), ("hi", "हिन्दी")]
-SITE = "https://treelevel.pasahome.org/installation/"
+SITE = "https://treelevel.pasahome.org/outils/"
 
 
 def write(path, text):
@@ -62,7 +62,7 @@ def credits():
 
 def readme():
     d = os.path.join(ROOT, "docs/readme")
-    page = head("TreeLevel Tools", SITE + "#outils")
+    page = head("TreeLevel Tools", SITE)
     page += ("[Installation](#installation) · [The container](#the-other-way-the-container) · "
              "[Links and credits](#links-and-credits) · [Contents](#contents)\n\n")
     page += blocks(d) + read(os.path.join(d, "rest.en.md"))
@@ -73,13 +73,13 @@ def readme():
 
 def tools(version, out):
     d = os.path.join(ROOT, "docs/release-notes", version)
-    page = head(f"TreeLevel Tools {version}", SITE + "?os=mac#outils") + blocks(d) + credits()
+    page = head(f"TreeLevel Tools {version}", SITE + "#mac") + blocks(d) + credits()
     write(out, page)
 
 
 def ipad(folder, out, pairs):
     subst = dict(p.split("=", 1) for p in pairs)
-    page = head("Pythia module for TreeLevel on iPad", SITE + "?os=ipad&v=1.4#outils") + blocks(folder, subst)
+    page = head("Pythia module for TreeLevel on iPad", SITE + "#ipad") + blocks(folder, subst)
     write(out, page)
 
 
