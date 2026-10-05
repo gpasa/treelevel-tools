@@ -8,6 +8,7 @@ TreeLevel site (its page « outils », translated like the rest of the site), se
   scripts/gh_pages.py readme                 README.md (and CREDITS.md) from docs/readme/
   scripts/gh_pages.py tools 0.5.0 [out.md]   the notes of the release mac-0.5.0, from docs/release-notes/0.5.0/
   scripts/gh_pages.py ipad <dir> out.md K=V… the notes of the iPad module, from <dir>/<lang>.md, $K replaced by V
+  scripts/gh_pages.py release <tag> out.md  an earlier release, from docs/release-notes/<tag>/, the credits by link
 
 The texts live one file per language; English is the reference, French the original.
 """
@@ -83,12 +84,32 @@ def ipad(folder, out, pairs):
     write(out, page)
 
 
+CREDITS_LINK = ("**Links and credits** — the generators, their authors and what to cite: "
+                "[CREDITS.md](https://github.com/gpasa/treelevel-tools/blob/main/CREDITS.md) · "
+                "[in your language](https://treelevel.pasahome.org/outils/#credits)\n")
+
+
+def release(tag, out):
+    """Les versions déjà publiées : leur texte propre en onze langues, les crédits par un lien plutôt que leurs tables
+    une fois de plus. Le titre et la section du site suivent la plateforme de l'étiquette."""
+    kind, version = tag.split("-", 1)
+    if tag.startswith("ipad-pythia-"):
+        title, anchor, foot = f"Pythia {tag.rsplit('-', 1)[1]} module for TreeLevel 1.3 on iPad", "#ipad", ""
+    else:
+        title = f"TreeLevel Tools {version} — {'macOS' if kind == 'mac' else 'Windows'}"
+        anchor, foot = ("#mac" if kind == "mac" else "#windows"), CREDITS_LINK
+    write(out, head(title, SITE + anchor) + blocks(os.path.join(ROOT, "docs/release-notes", tag)) + foot)
+    return title
+
+
 if __name__ == "__main__":
     what = sys.argv[1] if len(sys.argv) > 1 else ""
     if what == "readme":
         readme()
     elif what == "tools":
         tools(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else os.path.join(ROOT, "build/release/release-notes.md"))
+    elif what == "release":
+        print(release(sys.argv[2], sys.argv[3]))
     elif what == "ipad":
         ipad(sys.argv[2], sys.argv[3], sys.argv[4:])
     else:
