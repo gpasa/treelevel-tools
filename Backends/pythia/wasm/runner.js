@@ -7,7 +7,11 @@
 //     part: "beams", seedOffset: 0,     // as the engine passes them (a machine is drawn in two parts)
 //     hadrons: false,                   // true: mount the parton densities too (53 MB)
 //   });
-//   r.code, r.hepmc, r.stdout, r.stderr, r.seconds
+//   r.code, r.hepmc, r.stdout, r.stderr, r.seconds     (options.bytes : r.hepmcBytes, un Uint8Array, à la place de r.hepmc)
+//
+// options.onProgress(fraction), facultatif : le pilote dit où il en est (lignes « progress n N » de sa sortie
+// d'erreur, demandées par TREELEVEL_PROGRESS) ; elles vont à onProgress et pas au journal. Un lanceur dans un
+// Web Worker les fait suivre à la page pendant que Pythia tourne.
 //
 // Each job gets a fresh instance of the module: Pythia keeps global state, and a clean start is what the native
 // driver has too. The packs are fetched once and kept.
@@ -47,7 +51,11 @@
     var module = await global.TreeLevelPythia({
       locateFile: function (p) { return base + p; },
       print: function (s) { stdout += s + "\n"; },
-      printErr: function (s) { stderr += s + "\n"; },
+      printErr: function (s) {
+        var p = /^progress (\d+) (\d+)$/.exec(s);
+        if (p) { if (options.onProgress && +p[2] > 0) options.onProgress(+p[1] / +p[2]); return; }
+        stderr += s + "\n";
+      },
       preRun: [function (m) {
         loaded.forEach(function (p) { mount(m.FS, p); });
         m.FS.mkdirTree("/job");
@@ -55,6 +63,7 @@
         Object.keys(options.files || {}).forEach(function (name) { m.FS.writeFile("/job/" + name, options.files[name]); });
         m.FS.chdir("/job");
         m.ENV.PYTHIA8DATA = "/pythia/xmldoc";
+        if (options.onProgress) m.ENV.TREELEVEL_PROGRESS = "1";
       }],
     });
     var args = options.plan ? ["--job", "job.json", "--plan"] : ["--job", "job.json", "--out", "events.hepmc"];
@@ -62,9 +71,29 @@
     var code;
     try { code = module.callMain(args); }
     catch (e) { code = (e && typeof e.status === "number") ? e.status : -1; if (code === -1) stderr += String(e) + "\n"; }
-    var hepmc = null;
-    try { hepmc = module.FS.readFile("/job/events.hepmc", { encoding: "utf8" }); } catch (e) {}
-    return { code: code, hepmc: hepmc, stdout: stdout, stderr: stderr, seconds: (performance.now() - started) / 1000 };
+    // options.bytes : le fichier tel quel, en octets, sans le décoder — quelques milliers d'événements pp font des
+    // centaines de Mo, et leur chaîne JavaScript (deux octets par caractère) dépassait ce qu'un iPad tient.
+    var hepmc = null, hepmcBytes = null;
+    try {
+      if (options.bytes) hepmcBytes = module.FS.readFile("/job/events.hepmc");
+      else hepmc = module.FS.readFile("/job/events.hepmc", { encoding: "utf8" });
+    } catch (e) {}
+    return { code: code, hepmc: hepmc, hepmcBytes: hepmcBytes, stdout: stdout, stderr: stderr, seconds: (performance.now() - started) / 1000 };
+  }
+
+  // Le résumé sur les octets : les lignes « E » comptées, et le dernier GenCrossSection lu dans la fin du fichier.
+  function summaryOfBytes(bytes) {
+    if (!bytes || !bytes.length) return null;
+    var events = 0;
+    for (var i = 0; i + 2 < bytes.length; i++) {
+      if (bytes[i] === 10 && bytes[i + 1] === 69 && bytes[i + 2] === 32) events++;
+    }
+    if (bytes[0] === 69 && bytes[1] === 32) events++;
+    var tail = new TextDecoder().decode(bytes.subarray(Math.max(0, bytes.length - 262144)));
+    var all = tail.match(/^A 0 GenCrossSection .*/gm);
+    if (!events || !all) return null;
+    var f = all[all.length - 1].split(/\s+/);
+    return { events: events, sigma: +f[3], error: +f[4] };
   }
 
   // Comme le moteur : le nombre d'événements et la section efficace du dernier attribut GenCrossSection, en pb —
@@ -132,19 +161,26 @@
     var results = [];
     for (var i = 0; i < plan.parts.length; i++) {
       var part = plan.parts[i];
+      var report = options.onProgress ? (function (k, n) {
+        return function (f) { options.onProgress((k + f) / n); };
+      })(i, plan.parts.length) : null;
+      // Une seule partie et options.bytes : le résultat reste en octets de bout en bout. Deux parties se
+      // réunissent événement par événement, sur le texte.
+      var asBytes = !!options.bytes && plan.parts.length === 1;
       var r = await run({ base: options.base, job: options.job, files: options.files, hadrons: hadrons,
-                          part: part || null, seedOffset: i });
+                          part: part || null, seedOffset: i, onProgress: report, bytes: asBytes });
       log += (part ? "=== " + part + "\n" : "") + r.stdout + r.stderr;
-      var s = summary(r.hepmc);
-      if (r.code !== 0 || !r.hepmc || !s) {
+      var s = asBytes ? summaryOfBytes(r.hepmcBytes) : summary(r.hepmc);
+      if (r.code !== 0 || !(r.hepmc || r.hepmcBytes) || !s) {
         return { ok: false, message: "Pythia s'est arrêté (code " + r.code + ")" + (part ? " sur la partie « " + part + " »" : ""), log: log };
       }
-      results.push({ hepmc: r.hepmc, summary: s });
+      results.push({ hepmc: r.hepmc, hepmcBytes: r.hepmcBytes, summary: s });
     }
     var seconds = (performance.now() - started) / 1000;
     if (results.length === 1) {
       var only = results[0];
-      return { ok: true, hepmc: only.hepmc, events: only.summary.events, sigma: only.summary.sigma, error: only.summary.error, log: log, seconds: seconds };
+      return { ok: true, hepmc: only.hepmc, hepmcBytes: only.hepmcBytes, events: only.summary.events, sigma: only.summary.sigma,
+               error: only.summary.error, log: log, seconds: seconds };
     }
     var m = merge(results[0].hepmc, results[1].hepmc, job.events || results[0].summary.events,
                   results[0].summary, results[1].summary, !!(job.hardProcess && job.hardProcess.mixEqualShares));

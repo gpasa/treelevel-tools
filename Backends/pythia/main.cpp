@@ -18,6 +18,7 @@
 // Copyright (C) 2026 Guglielmo Pasa. GNU General Public License v3 or later (Pythia 8 is GPL).
 
 #include <cstdlib>
+#include <algorithm>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -298,7 +299,13 @@ int main(int argc, char* argv[]) {
 
   const int requested = pythia.mode("Main:numberOfEvents");
   int written = 0, failures = 0;
+  // L'avancement, quand le lanceur le demande (TREELEVEL_PROGRESS, posé par le module de l'iPad) : une ligne
+  // « progress n N » sur la sortie d'erreur à chaque centième. Sans la variable, rien ne change — le moteur du Mac
+  // et celui de Windows ne la posent pas, et leur journal reste le même.
+  const bool reportProgress = std::getenv("TREELEVEL_PROGRESS") != nullptr;
+  const int progressStep = std::max(1, requested / 100);
   for (int i = 0; i < requested; ++i) {
+    if (reportProgress && i % progressStep == 0) std::cerr << "progress " << i << " " << requested << std::endl;
     if (!pythia.next()) {
       if (pythia.info.atEndOfFile()) break;         // the Les Houches file is exhausted
       if (++failures > requested / 10 + 10) { std::cerr << "too many failed events" << std::endl; break; }
